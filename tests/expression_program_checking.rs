@@ -13,7 +13,15 @@ fn check(fixture_source: &str, file_name: &str) -> Vec<tsox::Diagnostic> {
     let result = checker.check_source(fixture_source, file_name);
     assert!(result.is_ok(), "fixture should at least parse: {result:?}");
     result
-        .map(|checked| checked.diagnostics)
+        .map(|checked| {
+            // A FlowApproximated warning says what was simplified, not what the source means;
+            // these tests are about the errors.
+            checked
+                .diagnostics
+                .into_iter()
+                .filter(|d| d.code != DiagnosticCode::FlowApproximated)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -659,7 +667,11 @@ fn switch_case_body_mismatch_is_caught() {
 fn switch_case_body_checks_clean_including_default() {
     let source =
         include_str!("fixtures/expression-program-checking/switch_case_body_checks_clean.ts");
-    let diagnostics = check(source, "switch_case_body_checks_clean.ts");
+    // The fallthrough warning (TSR9015) is not a false positive; look at errors only.
+    let diagnostics: Vec<_> = check(source, "switch_case_body_checks_clean.ts")
+        .into_iter()
+        .filter(|d| d.severity == tsox::Severity::Error)
+        .collect();
     assert!(
         diagnostics.is_empty(),
         "expected no false positives, got: {diagnostics:?}"

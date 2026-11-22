@@ -73,7 +73,7 @@ the message function that builds it, and the code areas that call that function 
 | TSR1412 | `ImplicitAnyJsxElement` | TS7026 | `jsx_element_implicitly_any` | `tsox-checker/bridge/expressions` |
 | TSR1501 | `TypeArgumentCountMismatch` | TS2314 | `type_argument_count_mismatch` | `tsox-checker/bridge/mod` |
 | TSR1502 | `TypeIsNotGeneric` | TS2315 | `type_is_not_generic` | `tsox-checker/bridge/mod` |
-| TSR1503 | `DuplicateTypeDeclaration` | TS2300 | `duplicate_type_declaration` | `tsox-checker/bridge/declare`, `tsox-checker/bridge/duplicates` |
+| TSR1503 | `DuplicateTypeDeclaration` | TS2300 | `duplicate_type_declaration` | `tsox-checker/bridge/declare`, `tsox-checker/bridge/duplicate_members`, `tsox-checker/bridge/duplicates` |
 | TSR1504 | `TypeArgumentCountRange` | TS2707 | `type_argument_count_mismatch` | `tsox-checker/bridge/mod` |
 | TSR1505 | `EnumDeclarationMerge` | TS2567 | `enum_declaration_merge` | `tsox-checker/bridge/declare`, `tsox-checker/bridge/duplicates` |
 | TSR1506 | `TypeArgumentListCountMismatch` | TS2558 | `call_type_argument_count_mismatch` | `tsox-checker/bridge/expressions` |
@@ -178,13 +178,14 @@ the message function that builds it, and the code areas that call that function 
 | TSR3061 | `VariableDeclarationListEmpty` | TS1123 | - | `tsox-checker/bridge/syntax_repair` |
 | TSR3090 | `DeclarationOrStatementExpected` | TS1128 | - | `tsox-checker/bridge/syntax_repair` |
 | TSR3091 | `RestParameterInitializer` | TS1048 | - | `tsox-checker/bridge/syntax_repair` |
+| TSR3300 | `ParameterPropertyOutsideConstructor` | TS2369 | `parameter_property_outside_constructor` | `tsox-checker/bridge/parameter_properties` |
 | TSR9001 | `UnimplementedCallExpressionKind` | - | `unimplemented_call_expression_kind` | `tsox-checker/bridge/expressions` |
 | TSR9002 | `UnimplementedNewExpressionTarget` | - | `unimplemented_new_expression_target` | `tsox-checker/bridge/expressions` |
 | TSR9003 | `UntypedParameterSkipsArityCheck` | - | `untyped_parameter_skips_arity_check`, `untyped_constructor_parameter_skips_arity_check` | `tsox-checker/bridge/expressions` |
 | TSR9004 | `UnimplementedComputedMemberKey` | - | `unimplemented_computed_member_key` | `tsox-checker/bridge/expressions` |
 | TSR9005 | `UnimplementedOptionalChainLink` | - | `unimplemented_optional_chain_link` | `tsox-checker/bridge/expressions` |
 | TSR9006 | `UnimplementedExpressionKind` | - | `unimplemented_expression_kind` | `tsox-checker/bridge/expressions` |
-| TSR9007 | `UnimplementedStaticAccessor` | - | `unimplemented_static_accessor` | `tsox-checker/bridge/statements` |
+| TSR9007 | `UnimplementedStaticAccessor` | - | `unimplemented_static_accessor` | (none found) |
 | TSR9008 | `UnimplementedClassShape` | - | `unimplemented_class_shape` | `tsox-checker/bridge/statements` |
 | TSR9009 | `UnimplementedDestructuringKey` | - | `unimplemented_destructuring_key` | `tsox-checker/bridge/statements` |
 | TSR9010 | `UnimplementedRestDestructuring` | - | `unimplemented_rest_destructuring` | `tsox-checker/bridge/statements` |
@@ -210,7 +211,7 @@ Each is a place where tsox gives up with a warning instead of checking. Pick one
 | TSR9004 | `UnimplementedComputedMemberKey` | `tsox-checker/bridge/expressions` |
 | TSR9005 | `UnimplementedOptionalChainLink` | `tsox-checker/bridge/expressions` |
 | TSR9006 | `UnimplementedExpressionKind` | `tsox-checker/bridge/expressions` |
-| TSR9007 | `UnimplementedStaticAccessor` | `tsox-checker/bridge/statements` |
+| TSR9007 | `UnimplementedStaticAccessor` | (none found) |
 | TSR9008 | `UnimplementedClassShape` | `tsox-checker/bridge/statements` |
 | TSR9009 | `UnimplementedDestructuringKey` | `tsox-checker/bridge/statements` |
 | TSR9010 | `UnimplementedRestDestructuring` | `tsox-checker/bridge/statements` |
@@ -228,3 +229,4 @@ The code and its message exist, but no check calls them. Each is a gap against t
 | --- | --- | --- | --- |
 | TSR1214 | `ReadonlyToMutable` | TS4104 | `readonly_to_mutable` |
 | TSR1813 | `RedeclareExportedVariable` | TS2323 | - |
+| TSR9007 | `UnimplementedStaticAccessor` | - | `unimplemented_static_accessor` |

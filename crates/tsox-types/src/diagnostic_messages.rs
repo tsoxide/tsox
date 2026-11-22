@@ -73,6 +73,13 @@ pub mod messages {
     /// The code and text for `actual` not being assignable to `expected`, reported
     /// under `plain` when no missing property replaces it. Used where a caller reports
     /// a mismatch of its own kind (a property of an object literal, an arrow body).
+    pub fn parameter_property_outside_constructor() -> DiagnosticMessage {
+        DiagnosticMessage::new(
+            DiagnosticCode::ParameterPropertyOutsideConstructor,
+            "A parameter property is only allowed in a constructor implementation.",
+        )
+    }
+
     pub fn tuple_index_out_of_range(text: String) -> DiagnosticMessage {
         DiagnosticMessage::new(DiagnosticCode::TupleIndexOutOfRange, text)
     }
@@ -80,28 +87,36 @@ pub mod messages {
     pub fn class_incorrectly_extends(
         arena: &TypeArena,
         class_name: &str,
+        instance: TypeId,
         base: TypeId,
     ) -> DiagnosticMessage {
-        DiagnosticMessage::new(
-            DiagnosticCode::ClassIncorrectlyExtends,
+        headed(
+            arena,
             format!(
                 "Class '{class_name}' incorrectly extends base class '{}'.",
                 crate::type_display::display_type(arena, base)
             ),
+            instance,
+            base,
+            DiagnosticCode::ClassIncorrectlyExtends,
         )
     }
 
     pub fn interface_incorrectly_extends(
         arena: &TypeArena,
         name: &str,
+        derived: TypeId,
         base: TypeId,
     ) -> DiagnosticMessage {
-        DiagnosticMessage::new(
-            DiagnosticCode::InterfaceIncorrectlyExtends,
+        headed(
+            arena,
             format!(
                 "Interface '{name}' incorrectly extends interface '{}'.",
                 crate::type_display::display_type(arena, base)
             ),
+            derived,
+            base,
+            DiagnosticCode::InterfaceIncorrectlyExtends,
         )
     }
 
@@ -116,8 +131,8 @@ pub mod messages {
             DiagnosticCode::PropertyNotAssignableToIndex,
             format!(
                 "Property '{property}' of type '{}' is not assignable to '{index_kind}' index type '{}'.",
-                crate::type_display::display_type(arena, property_type),
-                crate::type_display::display_type(arena, index_type)
+                crate::type_display::display_type_unqualified(arena, property_type),
+                crate::type_display::display_type_unqualified(arena, index_type)
             ),
         )
     }
@@ -138,32 +153,39 @@ pub mod messages {
         )
     }
 
+    // `own` is the class member's type and `inherited` the base member's; tsc explains the
+    // mismatch between the two under the headline.
     pub fn class_property_incompatible(
         arena: &TypeArena,
         property: &str,
         class_name: &str,
+        own: TypeId,
+        inherited: TypeId,
         interface: TypeId,
     ) -> DiagnosticMessage {
-        DiagnosticMessage::new(
-            DiagnosticCode::ClassPropertyIncompatible,
-            format!(
-                "Property '{property}' in type '{class_name}' is not assignable to the same property in base type '{}'.",
-                crate::type_display::display_type(arena, interface)
-            ),
-        )
+        let mut levels = vec![Level::headline(format!(
+            "Property '{property}' in type '{class_name}' is not assignable to the same property in base type '{}'.",
+            crate::type_display::display_type(arena, interface)
+        ))];
+        levels.extend(mismatch_levels(arena, own, inherited));
+        DiagnosticMessage::new(DiagnosticCode::ClassPropertyIncompatible, render(&levels))
     }
 
     pub fn class_incorrectly_implements(
         arena: &TypeArena,
         class_name: &str,
+        instance: TypeId,
         interface: TypeId,
     ) -> DiagnosticMessage {
-        DiagnosticMessage::new(
-            DiagnosticCode::ClassImplementsMismatch,
+        headed(
+            arena,
             format!(
                 "Class '{class_name}' incorrectly implements interface '{}'.",
                 crate::type_display::display_type(arena, interface)
             ),
+            instance,
+            interface,
+            DiagnosticCode::ClassImplementsMismatch,
         )
     }
 
@@ -874,7 +896,7 @@ pub mod messages {
             DiagnosticCode::PropertyDoesNotExist,
             format!(
                 "Property '{property_name}' does not exist on type '{}'.",
-                display_type(arena, object_type)
+                crate::type_display::display_type_unqualified(arena, object_type)
             ),
         )
     }
@@ -889,7 +911,7 @@ pub mod messages {
             DiagnosticCode::PropertyNeedsNewerLib,
             format!(
                 "Property '{property_name}' does not exist on type '{}'. Do you need to change your target library? Try changing the 'lib' compiler option to '{lib}' or later.",
-                display_type(arena, object_type)
+                crate::type_display::display_type_unqualified(arena, object_type)
             ),
         )
     }
@@ -904,7 +926,7 @@ pub mod messages {
             DiagnosticCode::PropertyDoesNotExistSuggestion,
             format!(
                 "Property '{property_name}' does not exist on type '{}'. Did you mean '{suggestion}'?",
-                display_type(arena, object_type)
+                crate::type_display::display_type_unqualified(arena, object_type)
             ),
         )
     }
@@ -1084,6 +1106,7 @@ pub mod messages {
         required: usize,
         total: usize,
     ) -> DiagnosticMessage {
+        let display_name = &crate::type_display::unqualify_names(display_name);
         let text = if required == total {
             format!("Generic type '{display_name}' requires {total} type argument(s).")
         } else {
