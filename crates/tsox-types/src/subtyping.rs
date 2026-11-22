@@ -331,7 +331,12 @@ fn is_subtype_uncached(
         (Type::Intersection(members), Type::NonPrimitive) => members
             .iter()
             .any(|&member| is_subtype_inner(arena, member, sup, seen, binders)),
-        (Type::NonPrimitive, Type::Object(object)) => object.properties.is_empty(),
+        // An index signature asks for members `object` does not have, so it is not met.
+        (Type::NonPrimitive, Type::Object(object)) => {
+            object.properties.is_empty()
+                && object.string_index.is_none()
+                && object.number_index.is_none()
+        }
 
         // An intersection whose members disagree about a discriminant has no values, so
         // it is `never` and a subtype of everything. It is still an intersection node
@@ -447,6 +452,22 @@ fn is_subtype_uncached(
                 || intersection_satisfies_object(arena, sub_members, target, seen, binders)
         }
 
+        // `(...args: [A] | [B, C]) => R` is two signatures, one per tuple. An overload set
+        // satisfies it when each of them is met by some overload.
+        (Type::Intersection(sub_members), Type::Function(target))
+            if rest_union_variants(arena, target).is_some() =>
+        {
+            let variants = rest_union_variants(arena, target).unwrap_or_default();
+            variants.iter().all(|variant| {
+                sub_members.iter().any(|&member| match arena.get(member) {
+                    Type::Function(source) => {
+                        function_is_subtype(arena, source, variant, seen, binders)
+                    }
+                    _ => is_subtype_inner(arena, member, sup, seen, binders),
+                })
+            })
+        }
+
         (Type::Intersection(sub_members), _) => sub_members
             .iter()
             .any(|&member| is_subtype_inner(arena, member, sup, seen, binders)),
@@ -478,7 +499,9 @@ fn is_subtype_uncached(
         // A Record or a Promise reads as an empty body here too, but a function is neither,
         // so they are left to their own rules.
         (Type::Function(_), Type::Object(target)) => {
-            arena.record_value_type(sup).is_none()
+            target.string_index.is_none()
+                && target.number_index.is_none()
+                && arena.record_value_type(sup).is_none()
                 && !arena.is_promise(sup)
                 && target.properties.iter().all(|property| {
                     property.optional
@@ -514,8 +537,16 @@ fn is_subtype_uncached(
             Type::Object(target),
         ) => {
             (target.properties.is_empty()
+                && target.string_index.is_none()
                 && arena.record_value_type(sup).is_none()
-                && !arena.is_promise(sup))
+                && !arena.is_promise(sup)
+                && match &target.number_index {
+                    None => true,
+                    // Arrays, tuples and strings are indexed by number; no other primitive is.
+                    Some(index) => {
+                        indexed_by_number_fits(arena, arena.get(sub), index.value, seen, binders)
+                    }
+                })
                 || is_wrapper_of(arena, sub, sup)
         }
 
@@ -601,6 +632,36 @@ fn tuple_is_subtype(
 // Arity is checked separately from position-by-position compatibility, since
 // optional and rest parameters mean two functions can have different declared
 // parameter counts and still be safely interchangeable.
+// The signatures a trailing rest parameter typed as a union of tuples stands for, one per
+// member, or `None` when the signature has no such parameter.
+fn rest_union_variants(
+    arena: &TypeArena,
+    target: &crate::types::FunctionType,
+) -> Option<Vec<crate::types::FunctionType>> {
+    let last = target.params.last().filter(|p| p.rest)?;
+    let Type::Union(members) = arena.get(last.type_id) else {
+        return None;
+    };
+    if !members
+        .iter()
+        .all(|&m| matches!(arena.get(m), Type::Tuple(_)))
+    {
+        return None;
+    }
+    Some(
+        members
+            .iter()
+            .map(|&member| {
+                let mut variant = target.clone();
+                if let Some(rest) = variant.params.last_mut() {
+                    rest.type_id = member;
+                }
+                variant
+            })
+            .collect(),
+    )
+}
+
 fn function_is_subtype(
     arena: &TypeArena,
     sub: &crate::types::FunctionType,
@@ -727,6 +788,31 @@ pub fn param_type_at(arena: &TypeArena, params: &[Param], position: usize) -> Op
 // the peekable iterator, which is where width subtyping (sub may have more fields
 // than sup) falls out for free, and any sup property sub never reaches is only
 // acceptable if sup itself marks that property optional.
+// A `private` or `protected` member can only be matched by the member of the same
+// declaration: another class's `private x` is a different member even with the same type, and
+// a public one does not stand in for either (tsc: "Property 'x' is private in type A but not
+// in type B"). `protected` is compared by access only, since the class hierarchy is not
+// visible here.
+fn access_is_compatible(
+    sub: &crate::types::PropModifiers,
+    sup: &crate::types::PropModifiers,
+) -> bool {
+    use crate::types::Access;
+    // A subclass may widen a protected member to public, and which classes derive from which
+    // is not known here, so a protected target is met by any member that is not private.
+    if sup.access == Access::Protected {
+        return sub.access != Access::Private;
+    }
+    if sub.access == sup.access {
+        return sup.access != Access::Private
+            || match (&sub.declaring_class, &sup.declaring_class) {
+                (Some((a, _)), Some((b, _))) => a == b,
+                _ => true,
+            };
+    }
+    false
+}
+
 fn object_is_subtype(
     arena: &TypeArena,
     sub: &ObjectType,
@@ -757,6 +843,9 @@ fn object_is_subtype(
                     if sub_property.optional && !sup_property.optional {
                         return false;
                     }
+                    if !access_is_compatible(&sub_property.modifiers, &sup_property.modifiers) {
+                        return false;
+                    }
                     if !property_is_subtype(
                         arena,
                         sub_property.type_id,
@@ -777,6 +866,26 @@ fn object_is_subtype(
     }
 
     index_signatures_fit(arena, sub, sup, seen, binders)
+}
+
+// Whether what a source of the `{}`-target arm yields at a numeric index fits `value`.
+fn indexed_by_number_fits(
+    arena: &TypeArena,
+    sub: &Type,
+    value: TypeId,
+    seen: &mut PairStack,
+    binders: &[(TypeParameterId, TypeParameterId)],
+) -> bool {
+    let fits = |id: TypeId, seen: &mut PairStack| is_subtype_inner(arena, id, value, seen, binders);
+    match sub {
+        Type::Array(element) => fits(*element, seen),
+        Type::Tuple(elements) => elements.iter().all(|e| fits(e.type_id, seen)),
+        Type::String | Type::StringLiteral(_) => {
+            let string = arena.string();
+            fits(string, seen)
+        }
+        _ => false,
+    }
 }
 
 #[inline(never)]
