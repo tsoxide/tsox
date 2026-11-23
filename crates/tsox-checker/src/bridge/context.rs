@@ -850,6 +850,7 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             return_type,
             type_params: Vec::new(),
             is_untyped: from.is_untyped,
+            construct: from.construct,
         }))
     }
 

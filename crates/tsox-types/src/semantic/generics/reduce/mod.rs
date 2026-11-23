@@ -98,7 +98,7 @@ mod contract_tests {
 
     #[test]
     fn an_operator_names_the_file_that_reduces_it() {
-        let mut arena = TypeArena::new();
+        let arena = TypeArena::new();
         let never = arena.never();
         assert_eq!(Operator::Keyof(never).name(), "keyof");
     }

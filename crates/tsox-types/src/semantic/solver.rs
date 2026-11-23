@@ -683,6 +683,7 @@ mod tests {
             return_type: void,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let number = arena.number();
         let actual_callback =
@@ -691,6 +692,7 @@ mod tests {
                 return_type: void,
                 type_params: Vec::new(),
                 is_untyped: false,
+                construct: false,
             }));
         let string = arena.string();
         let mut session = GenericInferenceSession::new(Vec::new(), Vec::new());
@@ -713,6 +715,7 @@ mod tests {
             return_type: void,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let (number, string) = (arena.number(), arena.string());
         let wide = arena.alloc_union(vec![number, string]);
@@ -722,6 +725,7 @@ mod tests {
                 return_type: void,
                 type_params: Vec::new(),
                 is_untyped: false,
+                construct: false,
             }));
         let mut session = GenericInferenceSession::new(Vec::new(), Vec::new());
         let mut cache = RelationCache::default();
@@ -898,12 +902,14 @@ mod tests {
             return_type: t,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let actual_method = arena.alloc(Type::Function(FunctionType {
             params: vec![Param::required(number)],
             return_type: string,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let expected = arena.alloc(Type::Object(ObjectType::new(vec![PropertyEntry {
             order: Default::default(),
@@ -945,6 +951,7 @@ mod tests {
             return_type: void,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let number = arena.number();
         let string = arena.string();
@@ -954,6 +961,7 @@ mod tests {
                 return_type: void,
                 type_params: Vec::new(),
                 is_untyped: false,
+                construct: false,
             }));
         let string_callback =
             arena.alloc(crate::types::Type::Function(crate::types::FunctionType {
@@ -961,6 +969,7 @@ mod tests {
                 return_type: void,
                 type_params: Vec::new(),
                 is_untyped: false,
+                construct: false,
             }));
         let mut session = GenericInferenceSession::new(Vec::new(), Vec::new());
         let mut cache = RelationCache::default();

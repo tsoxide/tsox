@@ -219,6 +219,7 @@ impl<'a, R: KeyResolver> StableHasher<'a, R> {
                     params: &params,
                     ret,
                     is_untyped: f.is_untyped,
+                    construct: f.construct,
                     tparams: &tparams,
                     bounds: &bounds,
                     defaults: &defaults,

@@ -257,6 +257,7 @@ pub(super) fn check_class_declaration(
                             return_type,
                             type_params: Vec::new(),
                             is_untyped: false,
+                            construct: false,
                         }
                     }
                 };

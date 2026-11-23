@@ -329,6 +329,10 @@ fn declare_values<'ast>(
     ambient: bool,
 ) {
     let overload_sets = overload_sets(items);
+    // A variable whose annotation names a declaration that comes later in the file (an
+    // interface that follows `declare var X: { new (o: XOptions): X }`) cannot be resolved
+    // on the first sweep, so it is tried once more after the rest has been declared.
+    let mut retry = Vec::new();
     for (item, _) in items.iter().copied() {
         match item {
             TopLevelItem::Variable(decl) => {
@@ -346,6 +350,8 @@ fn declare_values<'ast>(
                         resolve_type_annotation(annotation, &mut ctx.namespace, &mut ctx.arena)
                     {
                         ctx.declare_value(symbol_id, &id.name, type_id);
+                    } else {
+                        retry.push((symbol_id, id, annotation));
                     }
                 }
             }
@@ -368,6 +374,13 @@ fn declare_values<'ast>(
             // been, so that all of its blocks are read together.
             TopLevelItem::Namespace(_) => {}
             _ => {}
+        }
+    }
+    for (symbol_id, id, annotation) in retry {
+        if let Some(type_id) =
+            resolve_type_annotation(annotation, &mut ctx.namespace, &mut ctx.arena)
+        {
+            ctx.declare_value(symbol_id, &id.name, type_id);
         }
     }
     declare_namespace_values(items, ctx, ambient);

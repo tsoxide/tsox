@@ -69,6 +69,8 @@ pub enum NodeIn<'a> {
         ret: NodeHash,
         /// An untyped function accepts any call; it is part of the type's identity.
         is_untyped: bool,
+        /// A construct signature is a different kind of member from a call signature.
+        construct: bool,
         tparams: &'a [TypeParamKey],
         bounds: &'a [Option<NodeHash>],
         defaults: &'a [Option<NodeHash>],
@@ -140,11 +142,15 @@ pub fn hash_node(node: &NodeIn<'_>) -> NodeHash {
             params,
             ret,
             is_untyped,
+            construct,
             tparams,
             bounds,
             defaults,
         } => {
-            w.u8(0x23).u8(*is_untyped as u8).u32(params.len() as u32);
+            // Bit 1 is new; a call signature keeps the byte it always had.
+            w.u8(0x23)
+                .u8(*is_untyped as u8 | (*construct as u8) << 1)
+                .u32(params.len() as u32);
             for p in *params {
                 match p.name {
                     Some(n) => w.u8(1).str(n),
@@ -329,6 +335,7 @@ mod tests {
                 }],
                 ret: st(),
                 is_untyped: untyped,
+                construct: false, // TODO-construct
                 tparams: &[],
                 bounds: &[],
                 defaults: &[],
@@ -352,6 +359,7 @@ mod tests {
                 }],
                 ret: st(),
                 is_untyped: false,
+                construct: false,
                 tparams: &[],
                 bounds: &[],
                 defaults: &[],

@@ -1,3 +1,6 @@
+// Shared by three bench/example targets; each uses a different subset of it.
+#![allow(dead_code)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

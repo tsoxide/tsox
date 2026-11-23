@@ -160,6 +160,7 @@ pub(super) fn default_class_value<'ast>(
         return_type: instance,
         type_params: Vec::new(),
         is_untyped,
+        construct: true,
     }));
     with_type_params(
         ctx,

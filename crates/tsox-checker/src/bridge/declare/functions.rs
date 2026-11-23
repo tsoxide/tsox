@@ -213,6 +213,7 @@ pub(in crate::bridge) fn resolve_function_signature(
                 return_type,
                 type_params,
                 is_untyped: false,
+                construct: false,
             })),
     )
 }
@@ -263,6 +264,7 @@ pub(in crate::bridge) fn declare_class_constructor<'a>(
                 return_type: instance_type,
                 type_params: constructor_type_params,
                 is_untyped: constructor_is_untyped,
+                construct: true,
             }));
     // The statics ride next to the constructor in one value type, so `Widget.create()` finds
     // them and `new Widget()` still finds the constructor.
@@ -342,6 +344,7 @@ pub(in crate::bridge) fn declare_class_constructor<'a>(
                                 return_type: instance_type,
                                 type_params,
                                 is_untyped: false,
+                                construct: true,
                             },
                         )));
                     }
