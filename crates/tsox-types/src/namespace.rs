@@ -133,6 +133,10 @@ pub struct TypeNamespace<'a> {
 
     // Set when the stack guard cut a resolution short, so the check can report it once.
     depth_cut: bool,
+    /// Whether an interface or type literal with call or construct signatures resolves. Off
+    /// for the standard library, whose interfaces of that kind are merged across files in a
+    /// way the global binding does not follow yet, so they stay unmodelled (and lenient).
+    pub signatures_enabled: bool,
 
     // Project globals this file uses whose declaration could not be carried over. They
     // exist, so they are not reported as missing, but they have no type here.
@@ -446,6 +450,34 @@ fn interface_member_spans(part: &TSInterfaceDeclaration<'_>) -> Vec<(String, Spa
         .collect()
 }
 
+// What `resolve_object_members` gives for an object with call or construct signatures is the
+// function, or the intersection of the functions and the object of the named members. This
+// takes it apart again: the signatures, and the object (empty when it had no other member).
+pub fn split_signatures(arena: &mut TypeArena, shape: TypeId) -> (Vec<TypeId>, TypeId) {
+    let members = match arena.get(shape).clone() {
+        Type::Function(_) => vec![shape],
+        Type::Intersection(members)
+            if members
+                .iter()
+                .any(|&m| matches!(arena.get(m), Type::Function(_))) =>
+        {
+            members
+        }
+        _ => return (Vec::new(), shape),
+    };
+    let mut signatures = Vec::new();
+    let mut object = None;
+    for member in members {
+        match arena.get(member) {
+            Type::Function(_) => signatures.push(member),
+            _ => object = Some(member),
+        }
+    }
+    let object = object
+        .unwrap_or_else(|| arena.alloc(Type::Object(crate::types::ObjectType::new(Vec::new()))));
+    (signatures, object)
+}
+
 fn binding_fingerprint(bindings: &[(TypeParameterId, TypeId)]) -> u64 {
     let mut hasher = FxHasher::default();
     bindings.hash(&mut hasher);
@@ -462,6 +494,7 @@ impl<'a> TypeNamespace<'a> {
             file_id,
             entries: FxHashMap::default(),
             depth_cut: false,
+            signatures_enabled: true,
             unmodelled_globals: std::collections::HashSet::new(),
             unmodelled_type_only: std::collections::HashSet::new(),
             unmodelled_generics: std::collections::HashMap::new(),
@@ -1919,9 +1952,14 @@ impl<'a> TypeNamespace<'a> {
     ) -> Option<TypeId> {
         let mut merged_indexes: Box<[Option<crate::types::IndexSignature>; 2]> =
             Box::new([None, None]);
+        // The call and construct signatures of every part: functions, kept apart from the
+        // named members and put back beside them once the parts are merged.
+        let mut signatures: Vec<TypeId> = Vec::new();
         for part in parts {
             let members: Vec<&TSSignature> = part.body.body.iter().collect();
             let own = resolve_object_members(&members, self, arena)?;
+            let (own_signatures, own) = split_signatures(arena, own);
+            signatures.extend(own_signatures);
             let bases: Vec<&oxc_ast::ast::TSInterfaceHeritage> = part.extends.iter().collect();
             let shape = if bases.is_empty() {
                 own
@@ -1971,7 +2009,18 @@ impl<'a> TypeNamespace<'a> {
                 }
             }
         }
-        Some(alloc_with_indexes(arena, properties, merged_indexes))
+        let bare = properties.is_empty() && merged_indexes.iter().all(Option::is_none);
+        let shape = alloc_with_indexes(arena, properties, merged_indexes);
+        if signatures.is_empty() {
+            return Some(shape);
+        }
+        if !bare {
+            signatures.push(shape);
+        }
+        match signatures.len() {
+            1 => Some(signatures[0]),
+            _ => arena.alloc_intersection(signatures).ok(),
+        }
     }
 
     // Builds a class's structural shape by first copying the parent's own already
@@ -2124,6 +2173,7 @@ impl<'a> TypeNamespace<'a> {
                         return_type,
                         type_params,
                         is_untyped,
+                        construct: false,
                     }));
                     // Overloads: `m(a: A): R; m(a: A, b: B): R; m(...) { ... }`. The signatures
                     // without a body make up the type, as an intersection of them, and the
@@ -2361,6 +2411,7 @@ impl<'a> TypeNamespace<'a> {
                                 return_type,
                                 type_params,
                                 is_untyped,
+                                construct: false,
                             }))
                         }
                         None => arena.any(),

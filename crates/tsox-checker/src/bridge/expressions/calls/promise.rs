@@ -166,12 +166,14 @@ pub(in crate::bridge) fn promise_executor_type(
         return_type: void,
         type_params: Vec::new(),
         is_untyped: false,
+        construct: false,
     }));
     let reject = ctx.arena.alloc(Type::Function(FunctionType {
         params: vec![param(any, true, "reason")],
         return_type: void,
         type_params: Vec::new(),
         is_untyped: false,
+        construct: false,
     }));
     ctx.arena.alloc(Type::Function(FunctionType {
         params: vec![
@@ -181,5 +183,6 @@ pub(in crate::bridge) fn promise_executor_type(
         return_type: void,
         type_params: Vec::new(),
         is_untyped: false,
+        construct: false,
     }))
 }

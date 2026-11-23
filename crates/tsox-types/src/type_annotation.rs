@@ -278,6 +278,7 @@ pub fn resolve_ts_type(
                 return_type: return_type?,
                 type_params,
                 is_untyped: false,
+                construct: true,
             })))
         }
 
@@ -298,6 +299,7 @@ pub fn resolve_ts_type(
                 return_type: return_type?,
                 type_params,
                 is_untyped: false,
+                construct: false,
             })))
         }
 
@@ -1278,6 +1280,10 @@ pub fn resolve_object_members(
 ) -> Option<TypeId> {
     let mut properties: Vec<PropertyEntry> = Vec::with_capacity(members.len());
     let mut indexes: Box<[Option<crate::types::IndexSignature>; 2]> = Box::new([None, None]);
+    // Call and construct signatures (`(x: number): string`, `new (): T`). A signature is a
+    // function type, so an object that has them is that function (or the overload set, an
+    // intersection of functions) together with whatever else the object lists.
+    let mut signatures: Vec<TypeId> = Vec::new();
 
     for member in members {
         // As with class members in namespace.rs, one member this checker cannot
@@ -1320,7 +1326,56 @@ pub fn resolve_object_members(
                 }
                 continue;
             }
-            _ => return None,
+            TSSignature::TSCallSignatureDeclaration(call) => {
+                if !namespace.signatures_enabled {
+                    return None;
+                }
+                let scope = namespace.push_decl_type_params(arena, call.type_parameters.as_deref());
+                namespace.note_implicit_any_params(&call.params);
+                let params = resolve_params_with_any_fallback(&call.params, namespace, arena);
+                let return_type = match call.return_type.as_ref() {
+                    Some(annotation) => resolve_type_annotation(annotation, namespace, arena),
+                    None => Some(arena.any()),
+                };
+                let type_params =
+                    resolve_function_type_params(call.type_parameters.as_deref(), namespace, arena);
+                namespace.pop_type_params(scope);
+                signatures.push(arena.alloc(Type::Function(crate::types::FunctionType {
+                    params,
+                    return_type: return_type?,
+                    type_params,
+                    is_untyped: false,
+                    construct: false,
+                })));
+                continue;
+            }
+            TSSignature::TSConstructSignatureDeclaration(construct) => {
+                if !namespace.signatures_enabled {
+                    return None;
+                }
+                let scope =
+                    namespace.push_decl_type_params(arena, construct.type_parameters.as_deref());
+                namespace.note_implicit_any_params(&construct.params);
+                let params = resolve_params_with_any_fallback(&construct.params, namespace, arena);
+                let return_type = match construct.return_type.as_ref() {
+                    Some(annotation) => resolve_type_annotation(annotation, namespace, arena),
+                    None => Some(arena.any()),
+                };
+                let type_params = resolve_function_type_params(
+                    construct.type_parameters.as_deref(),
+                    namespace,
+                    arena,
+                );
+                namespace.pop_type_params(scope);
+                signatures.push(arena.alloc(Type::Function(crate::types::FunctionType {
+                    params,
+                    return_type: return_type?,
+                    type_params,
+                    is_untyped: false,
+                    construct: true,
+                })));
+                continue;
+            }
         };
 
         // ObjectType's merge-join over sorted property lists gives wrong answers
@@ -1336,7 +1391,17 @@ pub fn resolve_object_members(
         properties.push(entry);
     }
 
-    Some(finish_object(arena, properties, indexes))
+    if signatures.is_empty() {
+        return Some(finish_object(arena, properties, indexes));
+    }
+    let bare = properties.is_empty() && indexes.iter().all(Option::is_none);
+    if !bare {
+        signatures.push(finish_object(arena, properties, indexes));
+    }
+    match signatures.len() {
+        1 => Some(signatures[0]),
+        _ => arena.alloc_intersection(signatures).ok(),
+    }
 }
 
 #[inline(never)]
@@ -1417,6 +1482,7 @@ fn resolve_method_signature(
         return_type: return_type?,
         type_params,
         is_untyped: false,
+        construct: false,
     }));
     Some(PropertyEntry {
         order: Default::default(),

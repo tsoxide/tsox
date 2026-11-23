@@ -59,6 +59,7 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
 
         let number = arena.number();
@@ -85,6 +86,7 @@ mod tests {
             return_type: arena.void(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let number = arena.number();
         let number_array = arena.alloc(Type::Array(number));
@@ -98,6 +100,7 @@ mod tests {
             return_type: arena.void(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let mut bindings = Vec::new();
         let mut cache = RelationCache::default();
@@ -133,6 +136,7 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
         assert!(!contains_type_param(&arena, only_local));
         let mut leaked = Vec::new();
@@ -149,6 +153,7 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
         assert!(contains_type_param(&arena, with_outer));
         let mut ids = Vec::new();

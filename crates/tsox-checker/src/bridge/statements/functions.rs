@@ -161,6 +161,7 @@ fn check_function_declaration_inner(
                 return_type: inferred,
                 type_params: function_type.type_params,
                 is_untyped: function_type.is_untyped,
+                construct: function_type.construct,
             }));
         // The callers of an overloaded function see its overloads, whatever the body returns.
         if overloaded {
@@ -251,6 +252,7 @@ fn check_anonymous_function_body(
             return_type,
             type_params: function_type.type_params,
             is_untyped: function_type.is_untyped,
+            construct: function_type.construct,
         }));
     ctx.namespace.pop_type_params(type_param_scope);
     ctx.exported_function_types

@@ -192,6 +192,7 @@ fn infer_arrow_function_type_inner(
         return_type,
         type_params,
         is_untyped: false,
+        construct: false,
     }))
 }
 
@@ -337,5 +338,6 @@ fn infer_function_expression_type_inner(
         return_type,
         type_params,
         is_untyped: false,
+        construct: false,
     }))
 }

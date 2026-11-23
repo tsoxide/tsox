@@ -111,6 +111,7 @@ pub enum PNode {
         params: Box<[PParam]>,
         ret: u32,
         is_untyped: bool,
+        construct: bool,
         type_params: Box<[PFunctionTypeParam]>,
     },
     DeclRef {
@@ -331,6 +332,7 @@ impl<'a, R: KeyResolver> Exporter<'a, R> {
                     params: params.into(),
                     ret,
                     is_untyped: f.is_untyped,
+                    construct: f.construct,
                     type_params: type_params.into(),
                 }
             }
@@ -1063,6 +1065,7 @@ impl Importer {
                     params,
                     ret,
                     is_untyped,
+                    construct,
                     type_params,
                 } => {
                     let params = params
@@ -1099,6 +1102,7 @@ impl Importer {
                         return_type: ids[*ret as usize],
                         type_params: local_type_params,
                         is_untyped: *is_untyped,
+                        construct: *construct,
                     }))
                 }
                 PNode::DeclRef { key, .. } => {
@@ -1222,6 +1226,7 @@ mod tests {
             return_type: ret,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }))
     }
 
@@ -1739,6 +1744,7 @@ mod tests {
                 default: Some(string),
             }],
             is_untyped: false,
+            construct: false,
         }));
         let keys = Keys {
             slots: Vec::new(),

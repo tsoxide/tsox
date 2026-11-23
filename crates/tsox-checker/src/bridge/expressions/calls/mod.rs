@@ -395,6 +395,69 @@ pub(super) fn infer_new_expression_type(
     )
 }
 
+// The signature a call on a union of plain function types goes through, or None when the type
+// is not such a union (a member that is generic, overloaded, has a rest parameter, or is a
+// different kind of signature is left to the existing handling).
+fn combine_union_signatures(callee_type: TypeId, ctx: &mut CheckContext<'_, '_>) -> Option<TypeId> {
+    let Type::Union(members) = ctx.arena.get(callee_type).clone() else {
+        return None;
+    };
+    let mut functions = Vec::with_capacity(members.len());
+    for &member in &members {
+        match ctx.arena.get(member).clone() {
+            Type::Function(f)
+                if f.type_params.is_empty()
+                    && !f.is_untyped
+                    && !f.params.iter().any(|p| p.rest) =>
+            {
+                functions.push(f)
+            }
+            _ => return None,
+        }
+    }
+    let construct = functions.first()?.construct;
+    if functions.iter().any(|f| f.construct != construct) {
+        return None;
+    }
+    let longest = functions.iter().map(|f| f.params.len()).max()?;
+    let mut params = Vec::with_capacity(longest);
+    for position in 0..longest {
+        let mut types = Vec::new();
+        let mut optional = true;
+        let mut name = None;
+        for f in &functions {
+            if let Some(param) = f.params.get(position) {
+                if !types.contains(&param.type_id) {
+                    types.push(param.type_id);
+                }
+                optional &= param.optional;
+                name = name.or_else(|| param.name.clone());
+            }
+        }
+        let type_id = match types.len() {
+            1 => types[0],
+            _ => ctx.arena.alloc_intersection(types).ok()?,
+        };
+        // A parameter a member does not have is one the call may leave out for it only if
+        // it is optional for the others; required anywhere means required.
+        params.push(crate::types::Param {
+            type_id,
+            optional,
+            rest: false,
+            name,
+        });
+    }
+    let returns: Vec<TypeId> = functions.iter().map(|f| f.return_type).collect();
+    let return_type = ctx.arena.alloc_union(returns);
+    Some(ctx.arena.alloc(Type::Function(crate::types::FunctionType {
+        params,
+        return_type,
+        type_params: Vec::new(),
+        is_untyped: false,
+        construct,
+    })))
+}
+
 fn check_callable(
     callee_type: TypeId,
     site: CallSite<'_, '_>,
@@ -417,6 +480,9 @@ fn check_callable(
         Type::GenericParameter(_, _, Some(constraint)) => *constraint,
         _ => callee_type,
     };
+    // A union of functions is called through one signature that takes what every member
+    // takes (each parameter the intersection of the members') and gives what any returns.
+    let callee_type = combine_union_signatures(callee_type, ctx).unwrap_or(callee_type);
     let callee_type = match pick_callable_member(
         callee_type,
         arguments,

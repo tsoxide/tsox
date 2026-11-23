@@ -417,6 +417,9 @@ pub struct FunctionType {
     /// only by walking input/return types loses unused parameters such as `<T>() => void`.
     pub type_params: Vec<FunctionTypeParam>,
     pub is_untyped: bool,
+    /// A construct signature (`new (...) => T`, a class value) and not a call signature.
+    /// The two are different kinds of member: neither is assignable to the other.
+    pub construct: bool,
 }
 
 /// One type parameter owned by a function or method signature.

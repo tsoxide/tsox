@@ -184,6 +184,23 @@ fn is_subtype_inner(
     {
         return true;
     }
+    // A parameter of a generic source signature compared with a signature of another
+    // arity of type parameters: tsc instantiates it from the target, which this does not
+    // do, so it stands for whatever the target needs (see `function_is_subtype_with`).
+    if let Type::GenericParameter(sub_id, _, _) = arena.get(sub)
+        && binders
+            .iter()
+            .any(|(a, b)| a == sub_id && *b == erased_parameter())
+    {
+        return true;
+    }
+    if let Type::GenericParameter(sup_id, _, _) = arena.get(sup)
+        && binders
+            .iter()
+            .any(|(a, b)| *a == erased_parameter() && b == sup_id)
+    {
+        return true;
+    }
     if is_trivial_subtype(arena, sub, sup) {
         return true;
     }
@@ -675,6 +692,12 @@ fn function_is_subtype(
 // `bivariant_params` is tsc's rule for methods: a parameter position is compatible
 // when the types are related in *either* direction, not only contravariantly. It
 // applies to the parameters only; the return type stays covariant.
+// The stand-in a source signature's own type parameters are bound to when the target does
+// not have the same type parameters: such a parameter relates to anything.
+fn erased_parameter() -> TypeParameterId {
+    TypeParameterId::with_file(crate::types::FileId::ROOT, u32::MAX, u32::MAX)
+}
+
 fn function_is_subtype_with(
     arena: &TypeArena,
     sub: &crate::types::FunctionType,
@@ -683,11 +706,34 @@ fn function_is_subtype_with(
     seen: &mut PairStack,
     binders: &[(TypeParameterId, TypeParameterId)],
 ) -> bool {
+    // A construct signature and a call signature are different kinds of member.
+    if sub.construct != sup.construct {
+        return false;
+    }
     // A generic signature is universally quantified. Compare corresponding binders
     // under one shared alpha-renaming environment instead of treating their parameter
     // IDs as unrelated free variables. A generic/non-generic pair is not equivalent.
     if sub.type_params.len() != sup.type_params.len() {
-        return false;
+        // tsc instantiates a generic source from the target's parameter types, and relates
+        // a generic target to a plain source through the same machinery. That needs new
+        // types, which a relation cannot make, so the type parameters on either side are
+        // taken to match whatever they are compared with: a missed error, never a false one.
+        let mut erased = binders.to_vec();
+        for parameter in &sub.type_params {
+            erased.push((parameter.id, erased_parameter()));
+        }
+        for parameter in &sup.type_params {
+            erased.push((erased_parameter(), parameter.id));
+        }
+        let source = crate::types::FunctionType {
+            type_params: Vec::new(),
+            ..sub.clone()
+        };
+        let target = crate::types::FunctionType {
+            type_params: Vec::new(),
+            ..sup.clone()
+        };
+        return function_is_subtype_with(arena, &source, &target, bivariant_params, seen, &erased);
     }
     let mut active_binders = binders.to_vec();
     for (source, target) in sub.type_params.iter().zip(&sup.type_params) {
@@ -1361,6 +1407,7 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
         let target = arena.alloc(Type::Function(FunctionType {
             params: vec![Param::required(target_u)],
@@ -1372,6 +1419,7 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(is_subtype(&arena, source, target));
@@ -1403,6 +1451,7 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
         let target = arena.alloc(Type::Function(FunctionType {
             params: vec![Param::required(target_u)],
@@ -1414,6 +1463,7 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(is_subtype(&arena, source, target));
@@ -1437,12 +1487,14 @@ mod tests {
                 default: None,
             }],
             is_untyped: false,
+            construct: false,
         }));
         let concrete = arena.alloc(Type::Function(FunctionType {
             params: vec![Param::required(arena.string())],
             return_type: arena.string(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(!is_subtype(&arena, concrete, generic));
@@ -1459,6 +1511,7 @@ mod tests {
             return_type: arena.number(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         let sup = arena.alloc(Type::Function(FunctionType {
@@ -1466,6 +1519,7 @@ mod tests {
             return_type: arena.unknown(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(is_subtype(&arena, sub, sup));
@@ -1482,12 +1536,14 @@ mod tests {
             return_type: arena.number(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let returns_void = arena.alloc(Type::Function(FunctionType {
             params: Vec::new(),
             return_type: arena.void(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(is_subtype(&arena, returns_number, returns_void));
@@ -1517,6 +1573,7 @@ mod tests {
             return_type: arena.undefined(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         let sup = arena.alloc(Type::Function(FunctionType {
@@ -1524,6 +1581,7 @@ mod tests {
             return_type: arena.undefined(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(is_subtype(&arena, sub, sup));
@@ -1543,6 +1601,7 @@ mod tests {
             return_type: arena.undefined(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         let needs_one = arena.alloc(Type::Function(FunctionType {
@@ -1550,6 +1609,7 @@ mod tests {
             return_type: arena.undefined(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(!is_subtype(&arena, needs_two, needs_one));
@@ -1574,6 +1634,7 @@ mod tests {
             return_type: arena.undefined(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         let sup = arena.alloc(Type::Function(FunctionType {
@@ -1584,6 +1645,7 @@ mod tests {
             return_type: arena.undefined(),
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
 
         assert!(is_subtype(&arena, sub, sup));
@@ -1860,6 +1922,7 @@ mod intersection_relation_tests {
             return_type: returns,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }))
     }
 

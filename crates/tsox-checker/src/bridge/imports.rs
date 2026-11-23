@@ -950,6 +950,18 @@ fn merge_imported_object_shapes(
     original: crate::arena::TypeId,
     addition: crate::arena::TypeId,
 ) -> Option<crate::arena::TypeId> {
+    // A shape with call or construct signatures is those functions beside its object (see
+    // `split_signatures`): the objects merge as before and the signatures are kept.
+    let (mut signatures, original) = crate::namespace::split_signatures(arena, original);
+    let (added_signatures, addition) = crate::namespace::split_signatures(arena, addition);
+    for signature in added_signatures {
+        if !signatures
+            .iter()
+            .any(|&existing| arena.structurally_equal(existing, signature))
+        {
+            signatures.push(signature);
+        }
+    }
     let crate::types::Type::Object(original) = arena.get(original).clone() else {
         return None;
     };
@@ -974,11 +986,30 @@ fn merge_imported_object_shapes(
         }
         properties.push(added.clone());
     }
-    Some(
-        arena.alloc(crate::types::Type::Object(crate::types::ObjectType::new(
-            properties,
-        ))),
-    )
+    let object = arena.alloc(crate::types::Type::Object(
+        crate::types::ObjectType::new(properties).with_indexes(
+            original
+                .string_index
+                .clone()
+                .or(addition.string_index.clone()),
+            original
+                .number_index
+                .clone()
+                .or(addition.number_index.clone()),
+        ),
+    ));
+    if signatures.is_empty() {
+        return Some(object);
+    }
+    let bare = matches!(arena.get(object), crate::types::Type::Object(o)
+        if o.properties.is_empty() && o.string_index.is_none() && o.number_index.is_none());
+    if !bare {
+        signatures.push(object);
+    }
+    match signatures.len() {
+        1 => Some(signatures[0]),
+        _ => arena.alloc_intersection(signatures).ok(),
+    }
 }
 
 // Binds the declaration under `key` to `name`, with `symbol` as the value's symbol when it
@@ -1086,6 +1117,23 @@ fn bind_key_as<'ast>(
                         merge_imported_object_shapes(&mut ctx.arena, previous_type, merge_input)
                     {
                         binding_type = merged;
+                        // A variable typed by one part (`declare var Array: ArrayConstructor`)
+                        // holds that part's own Ref, so every part's Ref is pointed at the
+                        // merged shape; otherwise the members the other parts add are not
+                        // seen through it.
+                        if previous_generic.is_none()
+                            && !incoming_is_generic
+                            && ctx.arena.slot_of(merged).is_none()
+                        {
+                            for part in previous_keys.iter().chain(std::iter::once(&key)) {
+                                if let Some(reference) =
+                                    ctx.importer.import_decl(&mut ctx.arena, provider, *part)
+                                    && ctx.arena.slot_of(reference).is_some()
+                                {
+                                    ctx.arena.resolve_ref(reference, merged);
+                                }
+                            }
+                        }
                         if let Some(previous) = previous_generic {
                             binding_params = previous.params.clone();
                         } else if incoming_is_generic {

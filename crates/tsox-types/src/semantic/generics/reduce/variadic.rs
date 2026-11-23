@@ -66,12 +66,19 @@ pub fn reduce_variadic(arena: &mut TypeArena, elements: Vec<crate::types::TupleE
 /// Whether a parameter type holds a variadic tuple with more than one spread
 /// (`(...a: [...A, ...B]) => R`), which cannot be split by position alone.
 pub fn has_multi_spread_variadic(arena: &TypeArena, type_id: TypeId) -> bool {
-    match arena.get(type_id) {
-        Type::Variadic(elements) => elements.iter().filter(|e| e.rest).count() > 1,
-        Type::Function(function) => function
-            .params
-            .iter()
-            .any(|p| has_multi_spread_variadic(arena, p.type_id)),
-        _ => false,
+    fn walk(arena: &TypeArena, type_id: TypeId, seen: &mut Vec<TypeId>) -> bool {
+        // A function type can name itself through its own parameters (`interface I { (i: I): I }`).
+        if seen.contains(&type_id) {
+            return false;
+        }
+        seen.push(type_id);
+        match arena.get(type_id) {
+            Type::Variadic(elements) => elements.iter().filter(|e| e.rest).count() > 1,
+            Type::Function(function) => {
+                function.params.iter().any(|p| walk(arena, p.type_id, seen))
+            }
+            _ => false,
+        }
     }
+    walk(arena, type_id, &mut Vec::new())
 }

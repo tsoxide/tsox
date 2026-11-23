@@ -1306,6 +1306,7 @@ pub(super) fn collect_inference_candidates_inner(
                         return_type,
                         type_params: Vec::new(),
                         is_untyped: arg_fn.is_untyped,
+                        construct: arg_fn.construct,
                     }
                 }
             };

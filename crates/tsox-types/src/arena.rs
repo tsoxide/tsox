@@ -1586,7 +1586,15 @@ impl TypeArena {
             }
 
             (Type::Function(f), Type::Function(g)) => {
-                f.is_untyped == g.is_untyped
+                // A signature can name itself (`interface I { (i: I): I }`): re-entering a
+                // pair already being compared is that cycle.
+                let pair = (a, b);
+                if seen.contains(&pair) {
+                    return true;
+                }
+                seen.push(pair);
+                let equal = f.is_untyped == g.is_untyped
+                    && f.construct == g.construct
                     && f.type_params == g.type_params
                     && f.params.len() == g.params.len()
                     && f.params.iter().zip(&g.params).all(|(p, q)| {
@@ -1594,7 +1602,9 @@ impl TypeArena {
                             && p.rest == q.rest
                             && self.structurally_equal_inner(p.type_id, q.type_id, seen)
                     })
-                    && self.structurally_equal_inner(f.return_type, g.return_type, seen)
+                    && self.structurally_equal_inner(f.return_type, g.return_type, seen);
+                seen.pop();
+                equal
             }
 
             // Pairwise, which is only right because ObjectType keeps its
@@ -2166,6 +2176,7 @@ mod tests {
                 return_type: ret,
                 type_params: Vec::new(),
                 is_untyped: false,
+                construct: false,
             }))
         };
         let base = make(&mut arena, number, string, false);
@@ -2247,6 +2258,7 @@ mod tests {
                 return_type: string,
                 type_params: Vec::new(),
                 is_untyped: false,
+                construct: false,
             }))
         };
         assert_eq!(function(&mut arena), function(&mut arena));
@@ -2349,6 +2361,7 @@ mod tests {
                 return_type: string,
                 type_params: Vec::new(),
                 is_untyped: false,
+                construct: false,
             }))
         };
 
@@ -2756,6 +2769,7 @@ mod tests {
             return_type: void,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let entry = |is_method: bool| PropertyEntry {
             order: Default::default(),
@@ -3042,6 +3056,7 @@ mod intersection_tests {
             return_type: number,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         let t = parameter(&mut arena, "T", 1);
 

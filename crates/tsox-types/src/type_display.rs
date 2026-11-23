@@ -245,6 +245,9 @@ fn write_signature(
     out: &mut String,
     depth: usize,
 ) {
+    if function.construct && !is_method {
+        out.push_str("new ");
+    }
     if !function.type_params.is_empty() {
         out.push('<');
         for (index, type_param) in function.type_params.iter().enumerate() {
@@ -820,6 +823,7 @@ mod tests {
             return_type: number,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         assert_eq!(render(&arena, func), "(a: number, b?: string) => number");
     }
@@ -840,6 +844,7 @@ mod tests {
             return_type: void_like,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         assert_eq!(render(&arena, func), "(...rest: number[]) => undefined");
     }
@@ -858,6 +863,7 @@ mod tests {
             return_type: number,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         assert_eq!(render(&arena, func), "(arg0: number) => number");
     }

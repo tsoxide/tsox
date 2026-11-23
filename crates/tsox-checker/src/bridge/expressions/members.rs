@@ -400,6 +400,7 @@ fn string_member(arena: &mut TypeArena, property_name: &str) -> Option<TypeId> {
         return_type,
         type_params: Vec::new(),
         is_untyped: false,
+        construct: false,
     })))
 }
 
@@ -442,6 +443,7 @@ fn array_member(arena: &mut TypeArena, element: TypeId, property_name: &str) -> 
             return_type: result,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         }));
         param(callback_type, optional, false)
     };
@@ -513,6 +515,7 @@ fn array_member(arena: &mut TypeArena, element: TypeId, property_name: &str) -> 
                     default: None,
                 }],
                 is_untyped: false,
+                construct: false,
             })));
         }
         "flatMap" => (
@@ -552,6 +555,7 @@ fn array_member(arena: &mut TypeArena, element: TypeId, property_name: &str) -> 
         return_type,
         type_params: Vec::new(),
         is_untyped: false,
+        construct: false,
     })))
 }
 
@@ -580,6 +584,7 @@ fn promise_member(arena: &mut TypeArena, property_name: &str) -> Option<TypeId> 
         return_type: any,
         type_params: Vec::new(),
         is_untyped: false,
+        construct: false,
     })))
 }
 
@@ -620,6 +625,7 @@ fn universal_member(
             return_type: string,
             type_params: Vec::new(),
             is_untyped: false,
+            construct: false,
         })));
     }
     // Problem: `Point.prototype.add = ...` and `fn.name` reported "Property does not exist" on a
@@ -651,6 +657,7 @@ fn universal_member(
         return_type: result,
         type_params: Vec::new(),
         is_untyped: false,
+        construct: false,
     })))
 }
 

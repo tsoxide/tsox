@@ -420,6 +420,7 @@ impl Substitution<'_> {
                     return_type,
                     type_params,
                     is_untyped: function.is_untyped,
+                    construct: function.construct,
                 }))
             }
             Type::Object(object) => {
