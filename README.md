@@ -58,7 +58,7 @@ cargo install --path crates/tsox-cli     # the `tsox` command
 cargo install --path crates/tsox-lsp     # the `tsox-lsp` language server
 ```
 
-In JavaScript, the WebAssembly build: `npm install @tsox/tsox`.
+In JavaScript, the WebAssembly build: `npm install @tsox/wasm`.
 
 ## Use
 
