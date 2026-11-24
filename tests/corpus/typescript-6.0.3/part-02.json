@@ -243,7 +243,7 @@
 "compiler__collisionCodeGenModuleWithModuleChildren.ts": {"v":"MATCH","lines":[]},
 "compiler__collisionCodeGenModuleWithModuleReopening.ts": {"v":"FALSE POSITIVE","lines":[{"line":11,"result":"fp","tsox":["TS2351 This expression is not constructable.\n  Type '{ c1: new () => c1; m1: new () => m1; }' has no construct signatures."],"tsc":[]}]},
 "compiler__collisionCodeGenModuleWithPrivateMember.ts": {"v":"MATCH","lines":[]},
-"compiler__collisionCodeGenModuleWithUnicodeNames.ts": {"v":"GAP","lines":[{"line":1,"result":"gap","tsox":[],"tsc":["TS1490 File appears to be binary."]}]},
+"compiler__collisionCodeGenModuleWithUnicodeNames.ts": {"v":"MATCH","lines":[{"line":1,"result":"exact","tsox":["TS1490 File appears to be binary."],"tsc":["TS1490 File appears to be binary."]}]},
 "compiler__collisionExportsRequireAndAmbientFunction.ts": {"v":"MATCH","lines":[]},
 "compiler__collisionExportsRequireAndAmbientFunctionInGlobalFile.ts": {"v":"MATCH","lines":[]},
 "compiler__collisionExportsRequireAndFunction.ts": {"v":"MATCH","lines":[]},

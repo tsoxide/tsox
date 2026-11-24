@@ -3,6 +3,7 @@ mod ambient_checks;
 mod class_implements;
 mod context;
 mod declare;
+mod decorators;
 mod duplicate_members;
 mod duplicates;
 mod expando;
@@ -505,6 +506,16 @@ fn publish(ctx: &mut CheckContext<'_, '_>) -> (Vec<Diagnostic>, CheckMetrics) {
 // their code.
 #[tracing::instrument(skip_all, fields(file_name))]
 pub fn check_program(source: &str, file_name: &str) -> Result<Vec<Diagnostic>, CheckerError> {
-    let mut arena = TypeArena::new();
-    Ok(check_program_with_state(source, file_name, FileId::ROOT, &mut arena)?.0)
+    let run = || {
+        let mut arena = TypeArena::new();
+        Ok(check_program_with_state(source, file_name, FileId::ROOT, &mut arena)?.0)
+    };
+    // A caller's own thread (a test thread has 2 MB, a WASM instance about 1 MB) is not a stack
+    // the checker's recursion was sized for. The one-shot entry owns its arena, so it can run
+    // on a big, guarded stack of its own; a thread that is already guarded is used as it is.
+    if crate::stack_guard::armed() {
+        run()
+    } else {
+        crate::stack_guard::on_big_stack(run)
+    }
 }

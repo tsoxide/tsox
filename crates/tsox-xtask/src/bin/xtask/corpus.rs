@@ -534,13 +534,48 @@ fn verify(o: &Opts) -> Result<u8, String> {
         lines: vec![],
     };
     let mut kinds: [Vec<(String, String, Entry, Entry)>; 4] = Default::default();
+    // A recorded part with no report was not run at all: that is a regression of every file in
+    // it, not a pass.
+    let missing_parts: Vec<String> = part_names(&o.tag)
+        .into_iter()
+        .filter(|part| !reports.contains_key(part))
+        .collect();
+    for part in &missing_parts {
+        for (name, old) in read_part(&o.tag, part)? {
+            if old.v == "MATCH" && old.lines.is_empty() {
+                continue;
+            }
+            let gone = Entry {
+                v: "MISSING".into(),
+                lines: vec![],
+            };
+            kinds[1].push((part.clone(), name, old, gone));
+        }
+    }
     for (part, found) in &reports {
         let recorded = read_part(&o.tag, part)?;
         let names: std::collections::BTreeSet<&String> =
             recorded.keys().chain(found.keys()).collect();
         for name in names {
             let old = recorded.get(name).unwrap_or(&empty);
-            let new = found.get(name).unwrap_or(&empty);
+            // A file the run did not report is missing, which is worse than any verdict; only
+            // a recorded match with no lines can be absent from a run without meaning anything.
+            let new = match found.get(name) {
+                Some(entry) => entry,
+                None if old.v == "MATCH" && old.lines.is_empty() => &empty,
+                None => {
+                    kinds[1].push((
+                        part.clone(),
+                        name.clone(),
+                        old.clone(),
+                        Entry {
+                            v: "MISSING".into(),
+                            lines: vec![],
+                        },
+                    ));
+                    continue;
+                }
+            };
             let slot = match judge(old, new) {
                 Judgement::Same => 0,
                 Judgement::Worse => 1,

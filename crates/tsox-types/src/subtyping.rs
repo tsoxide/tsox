@@ -273,7 +273,12 @@ fn is_subtype_inner(
             memo.budget = relation_budget();
             memo.overflowed = false;
             memo.top = Some(pair);
-        } else if memo.budget <= 0 {
+        } else if memo.budget <= 0 || crate::stack_guard::exhausted() {
+            // The stack is a budget too: past it the comparison stops here, and says so the
+            // same way a spent relation budget does, instead of overflowing the thread.
+            if memo.budget > 0 {
+                crate::stack_guard::note_cut(crate::stack_guard::CutReason::StackExhausted);
+            }
             memo.overflowed = true;
             return Err(false);
         }

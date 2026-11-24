@@ -49,6 +49,9 @@ pub struct CheckOptions {
     /// `moduleDetection: "force"`: every file that is not a declaration file is a module, even
     /// with no `import` or `export`, so its top-level names are its own and not global.
     pub module_detection_force: bool,
+    /// `experimentalDecorators`: the legacy (TypeScript 4) decorator rules, where a parameter can
+    /// be decorated; without it decorators follow the ECMAScript proposal.
+    pub experimental_decorators: bool,
 }
 
 impl CheckOptions {
@@ -77,6 +80,7 @@ impl CheckOptions {
             no_fallthrough_cases_in_switch: false,
             module_is_es: false,
             module_detection_force: false,
+            experimental_decorators: false,
         }
     }
 
@@ -120,10 +124,11 @@ pub enum OptionField {
     NoFallthroughCasesInSwitch,
     ModuleIsEs,
     ModuleDetectionForce,
+    ExperimentalDecorators,
 }
 
 impl OptionField {
-    pub const ALL: [OptionField; 19] = [
+    pub const ALL: [OptionField; 20] = [
         OptionField::Strict,
         OptionField::NoImplicitAny,
         OptionField::NoImplicitThis,
@@ -143,6 +148,7 @@ impl OptionField {
         OptionField::NoFallthroughCasesInSwitch,
         OptionField::ModuleIsEs,
         OptionField::ModuleDetectionForce,
+        OptionField::ExperimentalDecorators,
     ];
 
     /// The tsconfig spelling, for reports.
@@ -167,6 +173,7 @@ impl OptionField {
             OptionField::NoFallthroughCasesInSwitch => "noFallthroughCasesInSwitch",
             OptionField::ModuleIsEs => "module (es)",
             OptionField::ModuleDetectionForce => "moduleDetection: force",
+            OptionField::ExperimentalDecorators => "experimentalDecorators",
         }
     }
 }
@@ -197,6 +204,7 @@ impl CheckOptions {
             OptionField::NoFallthroughCasesInSwitch => self.no_fallthrough_cases_in_switch,
             OptionField::ModuleIsEs => self.module_is_es,
             OptionField::ModuleDetectionForce => self.module_detection_force,
+            OptionField::ExperimentalDecorators => self.experimental_decorators,
         }
     }
 }
@@ -262,6 +270,7 @@ mod read_tests {
             no_fallthrough_cases_in_switch: true,
             module_is_es: true,
             module_detection_force: true,
+            experimental_decorators: true,
         };
         for field in OptionField::ALL {
             assert!(names.insert(field.name()));

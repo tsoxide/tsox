@@ -111,6 +111,7 @@ impl Hasher for FxHasher {
 }
 
 pub type FxHashMap<K, V> = std::collections::HashMap<K, V, FxBuildHasher>;
+pub type FxHashSet<K> = std::collections::HashSet<K, FxBuildHasher>;
 
 #[cfg(test)]
 mod tests {

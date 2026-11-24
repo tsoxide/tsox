@@ -553,6 +553,7 @@ pub struct PropertyEntry {
 
 /// The position of a member in its declaration. Always equal and hashes to nothing: see
 /// `PropertyEntry::order`.
+#[cfg_attr(feature = "snapshot", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DeclOrder(pub u32);
 

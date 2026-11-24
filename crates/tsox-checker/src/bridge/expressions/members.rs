@@ -127,6 +127,10 @@ fn lookup_with_augmentation(
     type_id: TypeId,
     property_name: &str,
 ) -> Option<TypeId> {
+    if crate::stack_guard::exhausted() {
+        crate::stack_guard::note_cut(crate::stack_guard::CutReason::StackExhausted);
+        return None;
+    }
     if let Some(found) = lookup_member(&mut ctx.arena, type_id, property_name) {
         // A name that only an index signature supplies may be absent at run time.
         if ctx.option(crate::check_options::OptionField::NoUncheckedIndexedAccess)
@@ -206,6 +210,10 @@ fn read_through_index_only(ctx: &CheckContext<'_, '_>, type_id: TypeId, name: &s
 }
 
 fn lookup_member(arena: &mut TypeArena, type_id: TypeId, property_name: &str) -> Option<TypeId> {
+    if crate::stack_guard::exhausted() {
+        crate::stack_guard::note_cut(crate::stack_guard::CutReason::StackExhausted);
+        return None;
+    }
     let effective = match arena.get(type_id) {
         Type::GenericParameter(_, _, Some(constraint)) => *constraint,
         _ => type_id,

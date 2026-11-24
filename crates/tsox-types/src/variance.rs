@@ -115,6 +115,12 @@ struct Walk<'a> {
 
 impl Walk<'_> {
     fn walk(&mut self, id: TypeId, pol: Pol) {
+        // Out of stack: the answer is not reliable, which callers already treat as "unknown".
+        if crate::stack_guard::exhausted() {
+            crate::stack_guard::note_cut(crate::stack_guard::CutReason::StackExhausted);
+            self.unreliable = true;
+            return;
+        }
         if self.seen.insert((id, pol), ()).is_some() {
             return;
         }

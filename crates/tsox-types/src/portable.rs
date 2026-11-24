@@ -30,6 +30,23 @@ use crate::types::{
     ConditionalType, FileId, FunctionType, ObjectType, Param, PropertyEntry, Type, TypeParameterId,
 };
 
+/// For each member of an exported union (which is listed in canonical, hash order), where it
+/// stood in the union as written. Equal and unhashed, like `DeclOrder`: it is for printing the
+/// members the way the source did, and never part of what the union is.
+#[cfg_attr(feature = "snapshot", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, Default)]
+pub struct WrittenOrder(pub Box<[u32]>);
+
+impl PartialEq for WrittenOrder {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for WrittenOrder {}
+impl std::hash::Hash for WrittenOrder {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
 #[cfg_attr(feature = "snapshot", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PProp {
@@ -38,6 +55,10 @@ pub struct PProp {
     pub is_method: bool,
     pub modifiers: crate::types::PropModifiers,
     pub ty: u32,
+    /// Where the member was written. Not part of the type's identity (equal and unhashed), so
+    /// the export stays sorted by name; it is carried so the importer can list members the way
+    /// the declaration did.
+    pub order: crate::types::DeclOrder,
 }
 
 #[cfg_attr(feature = "snapshot", derive(serde::Serialize, serde::Deserialize))]
@@ -88,7 +109,7 @@ pub enum PNode {
     NumLit(u64),
     BoolLit(bool),
     Array(u32),
-    Union(Box<[u32]>),
+    Union(Box<[u32]>, WrittenOrder),
     Intersection(Box<[u32]>),
     Conditional {
         check: u32,
@@ -220,6 +241,10 @@ impl<'a, R: KeyResolver> Exporter<'a, R> {
     // Recursion depth is the nesting of one declaration's body: Ref, App and generic
     // parameters stop the walk, so it does not follow a declaration into its members.
     fn emit(&mut self, id: TypeId) -> Option<u32> {
+        if crate::stack_guard::exhausted() {
+            crate::stack_guard::note_cut(crate::stack_guard::CutReason::StackExhausted);
+            return None;
+        }
         let ty = self.arena.raw(id).clone();
         // An alias is transparent for identity, so it is transparent here too; the
         // importer puts the name back from the declaration's kind.
@@ -236,13 +261,14 @@ impl<'a, R: KeyResolver> Exporter<'a, R> {
             Type::BooleanLiteral(b) => PNode::BoolLit(*b),
             Type::Array(el) => PNode::Array(self.emit(*el)?),
             Type::Union(members) => {
-                let mut ordered: Vec<(u128, TypeId)> = Vec::with_capacity(members.len());
-                for &m in members {
-                    ordered.push((self.ident.hash(m)?.as_u128(), m));
+                let mut ordered: Vec<(u128, usize, TypeId)> = Vec::with_capacity(members.len());
+                for (written, &m) in members.iter().enumerate() {
+                    ordered.push((self.ident.hash(m)?.as_u128(), written, m));
                 }
-                ordered.sort_by_key(|(h, _)| *h);
-                let ids: Vec<TypeId> = ordered.into_iter().map(|(_, m)| m).collect();
-                PNode::Union(self.all(&ids)?)
+                ordered.sort_by_key(|(h, _, _)| *h);
+                let written: Box<[u32]> = ordered.iter().map(|(_, at, _)| *at as u32).collect();
+                let ids: Vec<TypeId> = ordered.into_iter().map(|(_, _, m)| m).collect();
+                PNode::Union(self.all(&ids)?, WrittenOrder(written))
             }
             Type::Intersection(members) => PNode::Intersection(self.all(members)?),
             Type::Conditional(conditional) => {
@@ -291,6 +317,7 @@ impl<'a, R: KeyResolver> Exporter<'a, R> {
                         is_method: p.is_method,
                         modifiers: p.modifiers.clone(),
                         ty: self.emit(p.type_id)?,
+                        order: p.order,
                     });
                 }
                 props.sort_by(|a, b| a.name.as_bytes().cmp(b.name.as_bytes()));
@@ -994,8 +1021,21 @@ impl Importer {
                 PNode::NumLit(bits) => arena.alloc(Type::NumberLiteral(f64::from_bits(*bits))),
                 PNode::BoolLit(b) => arena.alloc(Type::BooleanLiteral(*b)),
                 PNode::Array(e) => arena.alloc(Type::Array(ids[*e as usize])),
-                PNode::Union(ms) => {
-                    arena.alloc_union(ms.iter().map(|&m| ids[m as usize]).collect())
+                PNode::Union(ms, written) => {
+                    // The members come in canonical order; the union is built in the order
+                    // its source wrote them, so it prints the way a local one does.
+                    let mut members: Vec<(u32, TypeId)> = ms
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &m)| {
+                            (
+                                written.0.get(i).copied().unwrap_or(i as u32),
+                                ids[m as usize],
+                            )
+                        })
+                        .collect();
+                    members.sort_by_key(|(at, _)| *at);
+                    arena.alloc_union(members.into_iter().map(|(_, m)| m).collect())
                 }
                 PNode::Intersection(ms) => {
                     let members = ms.iter().map(|&m| ids[m as usize]).collect();
@@ -1048,8 +1088,12 @@ impl Importer {
                     arena.alloc_tuple(elements)
                 }
                 PNode::Object { props, .. } => {
-                    let props = props
-                        .iter()
+                    // `ObjectType::new` numbers entries in the order it is given them, so give
+                    // them in the order they were written.
+                    let mut written: Vec<&PProp> = props.iter().collect();
+                    written.sort_by_key(|p| p.order.0);
+                    let props = written
+                        .into_iter()
                         .map(|p| PropertyEntry {
                             order: Default::default(),
                             name: Rc::from(&*p.name),
@@ -1399,6 +1443,77 @@ mod tests {
             panic!("a union")
         };
         assert!(members.contains(&r));
+    }
+
+    // An imported declaration lists its members and union branches the way it was written,
+    // not by name or by hash, so a message about it reads like one about a local type.
+    #[test]
+    fn an_import_keeps_the_written_order_of_members_and_branches() {
+        let mut a = TypeArena::new();
+        let keys = Keys::default();
+        let num = a.number();
+        let object = a.alloc(Type::Object(ObjectType::new(vec![
+            prop("b", num),
+            prop("a", num),
+            prop("c", num),
+        ])));
+        let (x, y, z) = (
+            a.alloc(Type::StringLiteral("x".into())),
+            a.alloc(Type::StringLiteral("y".into())),
+            a.alloc(Type::StringLiteral("z".into())),
+        );
+        let union = a.alloc_union(vec![z, x, y]);
+        let object_decl = export(
+            &a,
+            &keys,
+            key("O", DeclKind::Interface),
+            "O",
+            DeclKind::Interface,
+            object,
+        );
+        let union_decl = export(
+            &a,
+            &keys,
+            key("U", DeclKind::Alias),
+            "U",
+            DeclKind::Alias,
+            union,
+        );
+        let provider = provider_of(&[&object_decl, &union_decl]);
+
+        let mut b = TypeArena::new();
+        let mut importer = Importer::new();
+        let imported = importer
+            .import_decl(&mut b, &provider, object_decl.key)
+            .unwrap();
+        let Type::Object(object) = b.get(imported).clone() else {
+            panic!("an object")
+        };
+        let mut written: Vec<(u32, &str)> = object
+            .properties
+            .iter()
+            .map(|p| (p.order.0, &*p.name))
+            .collect();
+        written.sort();
+        assert_eq!(
+            written.iter().map(|(_, n)| *n).collect::<Vec<_>>(),
+            ["b", "a", "c"]
+        );
+
+        let imported = importer
+            .import_decl(&mut b, &provider, union_decl.key)
+            .unwrap();
+        let Type::Union(members) = b.get(imported).clone() else {
+            panic!("a union")
+        };
+        let names: Vec<String> = members
+            .iter()
+            .map(|&m| match b.get(m) {
+                Type::StringLiteral(s) => s.clone(),
+                _ => String::new(),
+            })
+            .collect();
+        assert_eq!(names, ["z", "x", "y"]);
     }
 
     #[test]

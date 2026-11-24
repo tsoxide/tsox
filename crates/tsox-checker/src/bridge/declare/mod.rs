@@ -210,6 +210,7 @@ pub fn declare_top_level<'ast>(program: &'ast Program<'ast>, ctx: &mut CheckCont
     declare_types(&items, ctx);
     super::imports::merge_own_global_interfaces(program, ctx);
     super::ambient_checks::check(program, ctx);
+    super::decorators::check(program, ctx);
     for (name, span, involves_enum) in ctx.namespace.take_declaration_collisions() {
         let message = if involves_enum {
             crate::diagnostic_messages::messages::enum_declaration_merge()

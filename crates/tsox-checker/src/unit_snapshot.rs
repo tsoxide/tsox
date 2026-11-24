@@ -20,7 +20,7 @@ use crate::probe_log::{FingerprintMemo, ProbeRecord, all_hold};
 use crate::unit::{AmbientExports, ReturnRead, UnitOutput};
 
 /// Bump this when the fields below, or the meaning of one, change.
-pub const SNAPSHOT_FORMAT: u32 = 3;
+pub const SNAPSHOT_FORMAT: u32 = 4;
 
 /// Bytes a snapshot may take when decoded. A library file's output is a few hundred kilobytes;
 /// the bound only stops a damaged length prefix from asking for a huge allocation.

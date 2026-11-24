@@ -62,6 +62,16 @@ fn parse_attempt<'a>(
     if result.diagnostics.has_errors() {
         for error in result.diagnostics.errors() {
             let Some(label) = error.labels.first() else {
+                // The one error with no position: tsc reports it at the start of the file.
+                if error.message == "File appears to be binary." {
+                    syntax.push(super::syntax_errors::SyntaxDiagnostic {
+                        span: oxc_span::Span::new(0, 0),
+                        message: crate::diagnostic_messages::messages::syntax(
+                            crate::diagnostic_codes::DiagnosticCode::BinaryFile,
+                            "File appears to be binary.".to_string(),
+                        ),
+                    });
+                }
                 continue;
             };
             let span =
