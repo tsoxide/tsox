@@ -172,6 +172,12 @@ pub fn exhausted() -> bool {
     })
 }
 
+/// Whether the calling thread already has a guard budget (it is a worker made by `on_big_stack`,
+/// or called `set_thread_stack`), so work on it needs no stack of its own.
+pub fn armed() -> bool {
+    FLOOR.with(|floor| floor.get() != 0)
+}
+
 /// Runs `work` on a fresh thread with a `BIG_STACK_BYTES` stack and a guard budget, and
 /// returns what it returned. A panic in `work` is raised again here. If the thread cannot
 /// be created, `work` runs on the calling thread, whose stack is whatever it is.
