@@ -322,6 +322,7 @@ pub(super) fn infer_array_expression_type(
     // Membership in `element_types`, so a literal of many distinct element types does one set
     // lookup per element instead of a scan of the list (the list keeps first-seen order).
     let mut literal_types: Vec<TypeId> = Vec::new();
+    let mut literal_at: std::collections::HashMap<TypeId, usize> = std::collections::HashMap::new();
     let mut element_seen: std::collections::HashSet<TypeId> =
         std::collections::HashSet::with_capacity(array.elements.len());
 
@@ -359,7 +360,8 @@ pub(super) fn infer_array_expression_type(
             Some(d) if holds_literal(ctx, d) => type_id,
             _ => crate::types::widen(&ctx.arena, type_id),
         };
-        if is_object_literal(expr) && !literal_types.contains(&type_id) {
+        if is_object_literal(expr) && !literal_at.contains_key(&type_id) {
+            literal_at.insert(type_id, literal_types.len());
             literal_types.push(type_id);
         }
         if element_seen.insert(type_id) {
@@ -371,7 +373,7 @@ pub(super) fn infer_array_expression_type(
     if literal_types.len() > 1 {
         let normalised = normalize_object_literals(ctx, &literal_types);
         for slot in element_types.iter_mut() {
-            if let Some(at) = literal_types.iter().position(|t| t == slot) {
+            if let Some(&at) = literal_at.get(slot) {
                 *slot = normalised[at];
             }
         }
@@ -416,9 +418,11 @@ pub(super) fn normalize_object_literals(
         }
     }
     let mut names: Vec<std::rc::Rc<str>> = Vec::new();
+    let mut name_seen: std::collections::HashSet<std::rc::Rc<str>> =
+        std::collections::HashSet::new();
     for shape in &shapes {
         for property in shape.properties.iter() {
-            if !names.contains(&property.name) {
+            if name_seen.insert(property.name.clone()) {
                 names.push(property.name.clone());
             }
         }
@@ -426,10 +430,10 @@ pub(super) fn normalize_object_literals(
     let undefined = ctx.arena.undefined();
     let mut out = Vec::with_capacity(literals.len());
     for (&id, shape) in literals.iter().zip(&shapes) {
-        let missing: Vec<&std::rc::Rc<str>> = names
-            .iter()
-            .filter(|name| !shape.properties.iter().any(|p| &p.name == *name))
-            .collect();
+        let own: std::collections::HashSet<&std::rc::Rc<str>> =
+            shape.properties.iter().map(|p| &p.name).collect();
+        let missing: Vec<&std::rc::Rc<str>> =
+            names.iter().filter(|name| !own.contains(name)).collect();
         if missing.is_empty() {
             out.push(id);
             continue;

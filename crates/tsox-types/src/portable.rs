@@ -220,6 +220,10 @@ impl<'a, R: KeyResolver> Exporter<'a, R> {
     // Recursion depth is the nesting of one declaration's body: Ref, App and generic
     // parameters stop the walk, so it does not follow a declaration into its members.
     fn emit(&mut self, id: TypeId) -> Option<u32> {
+        if crate::stack_guard::exhausted() {
+            crate::stack_guard::note_cut(crate::stack_guard::CutReason::StackExhausted);
+            return None;
+        }
         let ty = self.arena.raw(id).clone();
         // An alias is transparent for identity, so it is transparent here too; the
         // importer puts the name back from the declaration's kind.

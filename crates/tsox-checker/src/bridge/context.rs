@@ -3,7 +3,7 @@ use oxc_span::Span;
 use crate::arena::{TypeArena, TypeId};
 use crate::diagnostic_messages::DiagnosticMessage;
 use crate::diagnostics::{Diagnostic, Severity};
-use crate::fxhash::FxHashMap;
+use crate::fxhash::{FxHashMap, FxHashSet};
 use crate::keys::DeclKey;
 use crate::namespace::TypeNamespace;
 use crate::portable::{ImportSource, Importer};
@@ -316,11 +316,15 @@ pub struct ReturnReads {
     pub owner: Option<SymbolId>,
     // True while the expression of a `return` statement is being checked.
     pub in_return_expression: bool,
-    edges: Vec<(SymbolId, SymbolId)>,
+    // The call graph as two adjacency maps (callers to callees and back) with a set for the
+    // membership test, so a walk costs the edges it visits and not the edges there are.
+    edge_set: FxHashSet<(SymbolId, SymbolId)>,
+    succ: FxHashMap<SymbolId, Vec<SymbolId>>,
+    pred: FxHashMap<SymbolId, Vec<SymbolId>>,
     // The same record for calls to imported functions: the declarations a call reaches.
-    imported_edges: Vec<(SymbolId, DeclKey)>,
+    imported_by: FxHashMap<SymbolId, std::collections::BTreeSet<DeclKey>>,
     names: FxHashMap<SymbolId, (String, Span)>,
-    reported: Vec<SymbolId>,
+    reported: FxHashSet<SymbolId>,
 }
 
 impl ReturnReads {
@@ -331,9 +335,10 @@ impl ReturnReads {
             return;
         }
         if let Some(owner) = self.owner
-            && !self.edges.contains(&(owner, callee))
+            && self.edge_set.insert((owner, callee))
         {
-            self.edges.push((owner, callee));
+            self.succ.entry(owner).or_default().push(callee);
+            self.pred.entry(callee).or_default().push(owner);
         }
     }
 
@@ -344,11 +349,10 @@ impl ReturnReads {
             return;
         }
         if let Some(owner) = self.owner {
-            for key in callees {
-                if !self.imported_edges.contains(&(owner, *key)) {
-                    self.imported_edges.push((owner, *key));
-                }
-            }
+            self.imported_by
+                .entry(owner)
+                .or_default()
+                .extend(callees.iter().copied());
         }
     }
 
@@ -358,18 +362,16 @@ impl ReturnReads {
     pub fn cross_file(&self) -> Vec<(SymbolId, String, Span, Vec<DeclKey>, bool)> {
         let mut out = Vec::new();
         for (symbol, (name, span)) in &self.names {
-            let mut seen = vec![*symbol];
+            let mut seen: FxHashSet<SymbolId> = FxHashSet::default();
+            seen.insert(*symbol);
             let mut pending = vec![*symbol];
-            let mut callees: Vec<DeclKey> = Vec::new();
+            let mut callees: std::collections::BTreeSet<DeclKey> = Default::default();
             while let Some(node) = pending.pop() {
-                for (owner, key) in &self.imported_edges {
-                    if *owner == node && !callees.contains(key) {
-                        callees.push(*key);
-                    }
+                if let Some(keys) = self.imported_by.get(&node) {
+                    callees.extend(keys.iter().copied());
                 }
-                for (from, to) in &self.edges {
-                    if *from == node && !seen.contains(to) {
-                        seen.push(*to);
+                for to in self.succ.get(&node).into_iter().flatten() {
+                    if seen.insert(*to) {
                         pending.push(*to);
                     }
                 }
@@ -377,7 +379,7 @@ impl ReturnReads {
             if callees.is_empty() {
                 continue;
             }
-            callees.sort();
+            let callees: Vec<DeclKey> = callees.into_iter().collect();
             out.push((
                 *symbol,
                 name.clone(),
@@ -400,28 +402,32 @@ impl ReturnReads {
     // The functions on a cycle through `symbol` that have not been reported yet, with the
     // name and place to report each at. Empty when `symbol` is on no cycle.
     pub fn take_cycle(&mut self, symbol: SymbolId) -> Vec<(String, Span)> {
+        // A function nothing calls, or that calls nothing, is on no cycle.
+        if !self.succ.contains_key(&symbol) || !self.pred.contains_key(&symbol) {
+            return Vec::new();
+        }
         let reach = |from: SymbolId, forward: bool| -> Vec<SymbolId> {
-            let mut seen: Vec<SymbolId> = Vec::new();
+            let graph = if forward { &self.succ } else { &self.pred };
+            let mut seen: FxHashSet<SymbolId> = FxHashSet::default();
+            let mut order: Vec<SymbolId> = Vec::new();
             let mut pending = vec![from];
             while let Some(node) = pending.pop() {
-                for (a, b) in &self.edges {
-                    let (here, next) = if forward { (*a, *b) } else { (*b, *a) };
-                    if here == node && !seen.contains(&next) {
-                        seen.push(next);
-                        pending.push(next);
+                for next in graph.get(&node).into_iter().flatten() {
+                    if seen.insert(*next) {
+                        order.push(*next);
+                        pending.push(*next);
                     }
                 }
             }
-            seen
+            order
         };
         let ahead = reach(symbol, true);
-        let behind = reach(symbol, false);
+        let behind: FxHashSet<SymbolId> = reach(symbol, false).into_iter().collect();
         let mut found = Vec::new();
         for member in ahead.into_iter().filter(|node| behind.contains(node)) {
-            if self.reported.contains(&member) {
+            if !self.reported.insert(member) {
                 continue;
             }
-            self.reported.push(member);
             if let Some((name, span)) = self.names.get(&member) {
                 found.push((name.clone(), *span));
             }

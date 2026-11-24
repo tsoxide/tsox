@@ -59,6 +59,11 @@ impl Tally {
     fn print(&mut self, diagnostics: &[Diagnostic], source: &str) {
         let line_index = LineIndex::new(source);
         for diagnostic in diagnostics {
+            // A crashed unit is reported as an error so it is visible, but it is the checker
+            // failing, not the program: it must not look like an ordinary type error to a caller.
+            if diagnostic.code.as_str() == "TSR9101" {
+                self.fatal = true;
+            }
             match diagnostic.severity {
                 Severity::Error => self.errors += 1,
                 Severity::Warning => self.warnings += 1,
