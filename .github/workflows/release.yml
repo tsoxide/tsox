@@ -173,4 +173,4 @@ jobs:
             echo "NPM_TOKEN is not set: add it under Settings > Secrets and variables > Actions." >&2
             exit 1
           fi
-          npm publish pkg/*.tgz --access public --provenance
+          npm publish ./pkg/*.tgz --access public --provenance
