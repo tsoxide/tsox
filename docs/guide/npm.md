@@ -1,11 +1,11 @@
 # npm (WebAssembly)
 
 ```sh
-npm install tsox
+npm install @tsox/wasm
 ```
 
 ```js
-const { TsoxChecker } = require("tsox");
+const { TsoxChecker } = require("@tsox/wasm");
 const checker = new TsoxChecker();
 console.log(checker.checkSource("const n: number = 'x';", "a.ts"));
 ```
@@ -13,7 +13,7 @@ console.log(checker.checkSource("const n: number = 'x';", "a.ts"));
 In a browser or bundler, call `init()` first:
 
 ```js
-import init, { TsoxChecker } from "tsox";
+import init, { TsoxChecker } from "@tsox/wasm";
 await init();
 ```
 

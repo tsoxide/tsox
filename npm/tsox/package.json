@@ -1,5 +1,5 @@
 {
-  "name": "tsox",
+  "name": "@tsox/wasm",
   "version": "0.1.0",
   "description": "A TypeScript type checker written in Rust, as WebAssembly. Checks a source string and returns diagnostics.",
   "license": "MIT OR Apache-2.0",
