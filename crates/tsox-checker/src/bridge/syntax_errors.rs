@@ -25,6 +25,9 @@ fn same(code: Code, message: &str) -> Option<DiagnosticMessage> {
 }
 
 pub fn translate(source: &str, message: &str, span: Span) -> Option<SyntaxDiagnostic> {
+    if let Some(number) = number_error(source, message, span) {
+        return Some(number);
+    }
     let translated = translate_message(message)?;
     // Two rules oxc words the same for a different tsc rule: `super<T>(...)` is TS2754, and
     // `await using` has its own codes (TS1546, TS2852).
@@ -36,6 +39,14 @@ pub fn translate(source: &str, message: &str, span: Span) -> Option<SyntaxDiagno
         || (message.starts_with("`await` is only") && after.starts_with("using"))
     {
         return None;
+    }
+    if message == "Empty parenthesized expression" {
+        // tsc reports the `)` as the missing expression.
+        let start = span.start + 1;
+        return Some(SyntaxDiagnostic {
+            span: Span::new(start, start + 1),
+            message: translated,
+        });
     }
     if message.starts_with("Expected `") && tsc_says_something_else(source, message, span) {
         return None;
@@ -210,6 +221,7 @@ fn translate_message(message: &str) -> Option<DiagnosticMessage> {
         "An index signature parameter cannot have a question mark." => {
             same(Code::IndexSignatureOptionalParameter, message)
         }
+        "Empty parenthesized expression" => same(Code::ExpressionExpected, "Expression expected."),
         "Type parameter list cannot be empty." => same(Code::EmptyTypeParameterList, message),
         "Type argument list cannot be empty." => same(Code::EmptyTypeArgumentList, message),
         "A default export can only be used in an ECMAScript-style module." => {
@@ -232,7 +244,10 @@ fn translate_message(message: &str) -> Option<DiagnosticMessage> {
 // tsc reports its grammar errors (the checker's modifier, parameter, member and statement rules)
 // only for a file whose parser reported nothing: one parse error anywhere in the file silences all
 // of them. These are the tsc codes the parser itself reports.
-const PARSE_LEVEL: [u32; 8] = [1003, 1005, 1011, 1109, 1123, 1128, 1200, 1357];
+const PARSE_LEVEL: [u32; 17] = [
+    1002, 1160, 1003, 1005, 1011, 1109, 1123, 1125, 1128, 1177, 1178, 1198, 1199, 1200, 1357, 6188,
+    6189,
+];
 // And these are the grammar errors that go quiet. Errors tsc reports from its ordinary checks
 // (TS2364, TS2452, TS2462, TS2356, TS2357, TS2406, TS2487) are not silenced.
 const GRAMMAR_LEVEL: [u32; 36] = [
@@ -266,4 +281,139 @@ pub fn parse_level_count(syntax: &[SyntaxDiagnostic]) -> usize {
                 .is_some_and(|c| PARSE_LEVEL.contains(&c))
         })
         .count()
+}
+
+// oxc's "Invalid Character `c`" is a number the scanner stopped inside, at the character it
+// refused. tsc names what was missing: a digit after `0x`, `0b` or `0o`, or a misplaced `_`.
+fn number_error(source: &str, message: &str, span: Span) -> Option<SyntaxDiagnostic> {
+    let at = span.start as usize;
+    let before = source.get(..at)?.as_bytes();
+    let here = source.get(at..)?.chars().next()?;
+    let one = |from: usize, code: Code, text: &str| {
+        Some(SyntaxDiagnostic {
+            span: Span::new(from as u32, (from + 1) as u32),
+            message: messages::syntax(code, text.to_string()),
+        })
+    };
+    let misplaced = "Numeric separators are not allowed here.";
+    let consecutive = "Multiple consecutive numeric separators are not permitted.";
+    if message == "Unterminated string" {
+        return match here {
+            '"' | '\'' => one(at, Code::UnterminatedString, "Unterminated string literal."),
+            '`' => one(
+                at,
+                Code::UnterminatedTemplate,
+                "Unterminated template literal.",
+            ),
+            _ => None,
+        };
+    }
+    if message == "Invalid characters after number" {
+        // `0_1`, `0_.5`: a separator straight after a leading zero.
+        let leading_zero = before.last() == Some(&b'0')
+            && !before
+                .len()
+                .checked_sub(2)
+                .and_then(|i| before.get(i))
+                .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'$'));
+        if here == '_' && leading_zero {
+            return one(at, Code::NumericSeparatorMisplaced, misplaced);
+        }
+        return None;
+    }
+    if message.starts_with("Invalid escape sequence")
+        || message.starts_with("Bad escape sequence in untagged template literal")
+    {
+        return escape_error(source, at);
+    }
+    message.strip_prefix("Invalid Character `")?;
+    let prefix = [
+        (b"0x", 0),
+        (b"0X", 0),
+        (b"0b", 1),
+        (b"0B", 1),
+        (b"0o", 2),
+        (b"0O", 2),
+    ]
+    .into_iter()
+    .find(|(p, _)| before.ends_with(*p))
+    .map(|(_, kind)| kind);
+    if here == '_' && prefix.is_some() {
+        return one(at, Code::NumericSeparatorMisplaced, misplaced);
+    }
+    if before.ends_with(b"__") {
+        return one(at - 1, Code::NumericSeparatorsConsecutive, consecutive);
+    }
+    if before.ends_with(b"_") {
+        if here == '_' {
+            return one(at, Code::NumericSeparatorsConsecutive, consecutive);
+        }
+        let digit_before = before.len().checked_sub(2).and_then(|i| before.get(i))?;
+        if !digit_before.is_ascii_hexdigit() {
+            return None;
+        }
+        return one(at - 1, Code::NumericSeparatorMisplaced, misplaced);
+    }
+    let (code, text) = match prefix? {
+        0 => (Code::HexDigitExpected, "Hexadecimal digit expected."),
+        1 => (Code::BinaryDigitExpected, "Binary digit expected."),
+        _ => (Code::OctalDigitExpected, "Octal digit expected."),
+    };
+    Some(SyntaxDiagnostic {
+        span: Span::new(at as u32, at as u32),
+        message: messages::syntax(code, text.to_string()),
+    })
+}
+
+// A string or template escape oxc refused: `\x` and `\u` followed by something that is not hex
+// digits (TS1125), `\u{...}` past 0x10FFFF (TS1198) or never closed (TS1199). Anything else
+// oxc refuses (an octal escape in a template, say) is a different tsc rule and stays unreported.
+fn escape_error(source: &str, at: usize) -> Option<SyntaxDiagnostic> {
+    let rest = source.get(at..)?.as_bytes();
+    if rest.first() != Some(&b'\\') {
+        return None;
+    }
+    let missing = |offset: usize, code: Code, text: &str| {
+        Some(SyntaxDiagnostic {
+            span: Span::new((at + offset) as u32, (at + offset) as u32),
+            message: messages::syntax(code, text.to_string()),
+        })
+    };
+    let hex = "Hexadecimal digit expected.";
+    match rest.get(1)? {
+        b'x' => {
+            let bad = (0..2).find(|i| !rest.get(2 + i).is_some_and(u8::is_ascii_hexdigit))?;
+            missing(2 + bad, Code::HexDigitExpected, hex)
+        }
+        b'u' if rest.get(2) == Some(&b'{') => {
+            let digits = rest[3..]
+                .iter()
+                .take_while(|b| b.is_ascii_hexdigit())
+                .count();
+            if digits == 0 {
+                return missing(3, Code::HexDigitExpected, hex);
+            }
+            let text = std::str::from_utf8(&rest[3..3 + digits]).ok()?;
+            let too_big = u32::from_str_radix(text.trim_start_matches('0'), 16)
+                .map_or(true, |value| value > 0x10FFFF);
+            if too_big {
+                return missing(
+                    3 + digits,
+                    Code::UnicodeEscapeOutOfRange,
+                    "An extended Unicode escape value must be between 0x0 and 0x10FFFF inclusive.",
+                );
+            }
+            (rest.get(3 + digits) != Some(&b'}')).then_some(())?;
+            missing(
+                3 + digits,
+                Code::UnicodeEscapeUnterminated,
+                "Unterminated Unicode escape sequence.",
+            )
+        }
+        b'u' => {
+            let bad = (0..4).find(|i| !rest.get(2 + i).is_some_and(u8::is_ascii_hexdigit))?;
+            missing(2 + bad, Code::HexDigitExpected, hex)
+        }
+        _ => None,
+    }
 }
