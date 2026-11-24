@@ -174,10 +174,20 @@ the message function that builds it, and the code areas that call that function 
 | TSR3057 | `IncrementOperandNotNumeric` | TS2356 | - | `tsox-checker/bridge/syntax_repair` |
 | TSR3058 | `ForInTargetInvalid` | TS2406 | - | `tsox-checker/bridge/syntax_repair` |
 | TSR3059 | `ForOfTargetInvalid` | TS2487 | - | `tsox-checker/bridge/syntax_repair` |
-| TSR3060 | `ExpressionExpected` | TS1109 | - | `tsox-checker/bridge/syntax_repair` |
+| TSR3060 | `ExpressionExpected` | TS1109 | - | `tsox-checker/bridge/syntax_errors`, `tsox-checker/bridge/syntax_repair` |
 | TSR3061 | `VariableDeclarationListEmpty` | TS1123 | - | `tsox-checker/bridge/syntax_repair` |
 | TSR3090 | `DeclarationOrStatementExpected` | TS1128 | - | `tsox-checker/bridge/syntax_repair` |
 | TSR3091 | `RestParameterInitializer` | TS1048 | - | `tsox-checker/bridge/syntax_repair` |
+| TSR3092 | `HexDigitExpected` | TS1125 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3093 | `BinaryDigitExpected` | TS1177 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3094 | `OctalDigitExpected` | TS1178 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3095 | `NumericSeparatorMisplaced` | TS6188 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3096 | `NumericSeparatorsConsecutive` | TS6189 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3097 | `UnicodeEscapeOutOfRange` | TS1198 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3098 | `UnicodeEscapeUnterminated` | TS1199 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3099 | `UnterminatedString` | TS1002 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3100 | `UnterminatedTemplate` | TS1160 | - | `tsox-checker/bridge/syntax_errors` |
+| TSR3101 | `BinaryFile` | TS1490 | - | `tsox-checker/bridge/parse` |
 | TSR3300 | `ParameterPropertyOutsideConstructor` | TS2369 | `parameter_property_outside_constructor` | `tsox-checker/bridge/parameter_properties` |
 | TSR9001 | `UnimplementedCallExpressionKind` | - | `unimplemented_call_expression_kind` | `tsox-checker/bridge/expressions` |
 | TSR9002 | `UnimplementedNewExpressionTarget` | - | `unimplemented_new_expression_target` | `tsox-checker/bridge/expressions` |
