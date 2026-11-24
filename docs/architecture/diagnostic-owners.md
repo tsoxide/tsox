@@ -188,6 +188,8 @@ the message function that builds it, and the code areas that call that function 
 | TSR3099 | `UnterminatedString` | TS1002 | - | `tsox-checker/bridge/syntax_errors` |
 | TSR3100 | `UnterminatedTemplate` | TS1160 | - | `tsox-checker/bridge/syntax_errors` |
 | TSR3101 | `BinaryFile` | TS1490 | - | `tsox-checker/bridge/parse` |
+| TSR3102 | `DecoratorNotValidHere` | TS1206 | - | `tsox-checker/bridge/decorators`, `tsox-checker/bridge/syntax_repair` |
+| TSR3103 | `DecoratorOnOverload` | TS1249 | - | `tsox-checker/bridge/decorators` |
 | TSR3300 | `ParameterPropertyOutsideConstructor` | TS2369 | `parameter_property_outside_constructor` | `tsox-checker/bridge/parameter_properties` |
 | TSR9001 | `UnimplementedCallExpressionKind` | - | `unimplemented_call_expression_kind` | `tsox-checker/bridge/expressions` |
 | TSR9002 | `UnimplementedNewExpressionTarget` | - | `unimplemented_new_expression_target` | `tsox-checker/bridge/expressions` |

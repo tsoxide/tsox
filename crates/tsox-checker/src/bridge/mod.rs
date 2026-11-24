@@ -3,6 +3,7 @@ mod ambient_checks;
 mod class_implements;
 mod context;
 mod declare;
+mod decorators;
 mod duplicate_members;
 mod duplicates;
 mod expando;

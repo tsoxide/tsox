@@ -316,6 +316,32 @@ const REPAIRS: &[Repair] = &[
         applies: |_, _, _, m| m == "Expected `,` or `]` but found `=`",
         run: |t, s, _| index_signature_initializer(t, s),
     },
+    // A decorator in front of a declaration that cannot have one stops the parser at the keyword
+    // after it. This is tried before the generic row, which would read the stop as a missing operand.
+    Repair {
+        name: "decorator_on_declaration",
+        doc: "`@dec enum E {}`, `@dec function f() {}`: a decorator where none is allowed.",
+        applies: |t, s, e, m| {
+            m == "Unexpected token"
+                && matches!(
+                    t.get(s..e),
+                    Some(
+                        "enum"
+                            | "function"
+                            | "interface"
+                            | "type"
+                            | "var"
+                            | "let"
+                            | "const"
+                            | "namespace"
+                            | "module"
+                            | "import"
+                    )
+                )
+                && decorators_before(t, s).is_some()
+        },
+        run: |t, s, _| decorator_on_declaration(t, s),
+    },
     // A missing operand comes before a stray brace: `export = }` is TS1109 for the `}`, not a
     // brace left over after a statement.
     Repair {
@@ -1195,6 +1221,80 @@ fn empty_declaration_list(text: &str, start: usize) -> Option<Rule> {
             // tsc reports it with no width, straight after the keyword.
             start: before.len(),
             end: before.len(),
+        },
+    })
+}
+
+// The start of the run of decorators that ends just before `at` (only whitespace between), and
+// where the last of them ends. `@a @b(1, 2) @c.d` is one run.
+fn decorators_before(text: &str, at: usize) -> Option<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let trim = |mut end: usize| {
+        while end > 0 && bytes[end - 1].is_ascii_whitespace() {
+            end -= 1;
+        }
+        end
+    };
+    let last_end = trim(at);
+    let mut end = last_end;
+    let mut first = None;
+    loop {
+        let mut p = end;
+        if p > 0 && bytes[p - 1] == b')' {
+            let mut depth = 0usize;
+            loop {
+                if p == 0 {
+                    return first.map(|start| (start, last_end));
+                }
+                p -= 1;
+                match bytes[p] {
+                    b')' => depth += 1,
+                    b'(' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let name_end = p;
+        while p > 0 && is_name_byte(bytes[p - 1]) {
+            p -= 1;
+        }
+        if p == name_end || p == 0 || bytes[p - 1] != b'@' {
+            return first.map(|start| (start, last_end));
+        }
+        let start = p - 1;
+        first = Some(start);
+        end = trim(start);
+        if end == 0 {
+            return first.map(|start| (start, last_end));
+        }
+    }
+}
+
+fn decorator_on_declaration(text: &str, at: usize) -> Option<Rule> {
+    let (start, end) = decorators_before(text, at)?;
+    // The decorators go (blanked, so every offset after them is where it was), and tsc names the
+    // first token of the declaration, the `@`.
+    let blank: String = text[start..end]
+        .chars()
+        .map(|c| if c.is_ascii_whitespace() { c } else { ' ' })
+        .collect();
+    Some(Rule {
+        copy: None,
+        start,
+        end,
+        with: blank,
+        note: Note {
+            message: messages::syntax(
+                Code::DecoratorNotValidHere,
+                "Decorators are not valid here.".to_string(),
+            ),
+            start,
+            end: start + 1,
         },
     })
 }
