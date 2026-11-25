@@ -274,7 +274,10 @@ fn check_extends<'ast>(
     if ctx.option(crate::check_options::OptionField::NoImplicitOverride) {
         report_missing_overrides(class, &base_name.name, base, ctx);
     }
-    let (instance, base_for_check) = (without_private_names(ctx, instance), without_private_names(ctx, base));
+    let (instance, base_for_check) = (
+        without_private_names(ctx, instance),
+        without_private_names(ctx, base),
+    );
     if crate::subtyping::is_subtype(&ctx.arena, instance, base_for_check) {
         return;
     }

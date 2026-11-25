@@ -42,7 +42,7 @@ pub fn report_unresolved_type_names<'ast>(
         in_class_initializer: 0,
         class_frames: Vec::new(),
         member_function_pending: false,
-            ambient_module_depth: 0,
+        ambient_module_depth: 0,
     };
     walker.visit_program(program);
 }

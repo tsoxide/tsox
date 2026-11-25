@@ -558,10 +558,7 @@ fn annotation_never_includes_undefined(annotation: &oxc_ast::ast::TSType<'_>) ->
         }
         // A union includes `undefined` iff any member does, so it never does iff every member
         // never does. `symbol | null` and `E.A | E.B` thus fire; `string | undefined` does not.
-        TSType::TSUnionType(union) => union
-            .types
-            .iter()
-            .all(annotation_never_includes_undefined),
+        TSType::TSUnionType(union) => union.types.iter().all(annotation_never_includes_undefined),
         // An intersection includes `undefined` iff every member does, so it never does iff any
         // member never does. `A & B` where `A` is `number` thus fires.
         TSType::TSIntersectionType(intersection) => intersection

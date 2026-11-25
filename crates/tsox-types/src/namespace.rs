@@ -793,9 +793,9 @@ impl<'a> TypeNamespace<'a> {
             .iter()
             .map(|outer| format!("{outer}.{dotted}"))
             .collect::<Vec<_>>();
-        self.entries
-            .keys()
-            .any(|key| key.starts_with(&dotted) || scoped.iter().any(|s| key.starts_with(s.as_str())))
+        self.entries.keys().any(|key| {
+            key.starts_with(&dotted) || scoped.iter().any(|s| key.starts_with(s.as_str()))
+        })
     }
 
     /// Enters `namespace N { ... }`: what is declared until `pop_scope` is `N.x`, and a

@@ -626,8 +626,6 @@ fn references_react_lib(source: &str) -> bool {
 // so tsc does not report TS7026.
 fn has_jsx_factory_pragma(source: &str) -> bool {
     source.lines().take(40).any(|line| {
-        line.contains("@jsx")
-            || line.contains("@jsxFrag")
-            || line.contains("@jsxImportSource")
+        line.contains("@jsx") || line.contains("@jsxFrag") || line.contains("@jsxImportSource")
     })
 }

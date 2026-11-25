@@ -587,10 +587,7 @@ fn source_declares_jsx_intrinsics(program: &Program<'_>) -> bool {
     use super::declare::{TopLevelItem, namespace_members};
     use oxc_ast::ast::Statement;
 
-    fn namespace_has_intrinsics(
-        ns: &oxc_ast::ast::TSNamespaceDeclaration<'_>,
-        depth: u8,
-    ) -> bool {
+    fn namespace_has_intrinsics(ns: &oxc_ast::ast::TSNamespaceDeclaration<'_>, depth: u8) -> bool {
         if depth > 8 {
             return false;
         }

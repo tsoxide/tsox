@@ -915,8 +915,8 @@ pub(super) fn infer_computed_member_access_type(
         // `any`, `unknown` and an error type absorb `undefined` in a union, so an element of
         // one of those stays as it is: `comments[i].x` on a `Missing[]` is not "possibly
         // undefined".
-        let absorbs_undefined = [ctx.arena.any(), ctx.arena.unknown(), ctx.arena.error()]
-            .contains(&element_type);
+        let absorbs_undefined =
+            [ctx.arena.any(), ctx.arena.unknown(), ctx.arena.error()].contains(&element_type);
         if absorbs_undefined
             || !ctx.option(crate::check_options::OptionField::NoUncheckedIndexedAccess)
         {
