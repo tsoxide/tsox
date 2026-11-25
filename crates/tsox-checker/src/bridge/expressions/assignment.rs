@@ -7,7 +7,7 @@ use crate::types::Type;
 
 use super::super::context::CheckContext;
 use super::super::narrow::{path_of_member, resolve_symbol_id};
-use super::binary::infer_binary_expression_type;
+use super::binary::{infer_binary_expression_type, may_be_unknown, nullish_members};
 use super::core::resolve_identifier_type;
 use super::infer_expression_type;
 use super::members::{infer_computed_member_access_type, infer_member_access_type};
@@ -298,13 +298,19 @@ pub(super) fn infer_update_expression_type(
     ctx: &mut CheckContext<'_, '_>,
 ) -> TypeId {
     use oxc_ast::ast::SimpleAssignmentTarget;
+    // The operand's type, when the target is one this checker can read: tsc holds an
+    // `++`/`--` operand to the arithmetic rule (its TS2356), reported once on the whole
+    // expression when the operand is not any, number, bigint or an enum. bigint has no
+    // type in this checker (the annotation is unresolved), so such an operand reads as
+    // the error type and stays silent below rather than being reported.
+    let mut operand_type: Option<TypeId> = None;
     if let SimpleAssignmentTarget::AssignmentTargetIdentifier(ident) = &update.argument {
         if let Some(message) = immutable_binding_message(ident, scoping, ctx) {
             ctx.error(message, ident.span);
             return ctx.arena.number();
         }
         // The operand is read for its own errors (an undeclared name, say).
-        resolve_identifier_type(ident, scoping, ctx);
+        operand_type = Some(resolve_identifier_type(ident, scoping, ctx));
     }
     // `p.n++` writes the property, so a readonly one is an error as in a plain assignment.
     if let SimpleAssignmentTarget::StaticMemberExpression(member) = &update.argument {
@@ -316,14 +322,51 @@ pub(super) fn infer_update_expression_type(
             &member.property.name,
             member.property.span,
         );
+        // The property is also read, and it is the read's type that the arithmetic rule
+        // below judges (`objA.a++` with `a: string` is TS2356 on the member's type).
+        // A guard may have narrowed the path (`if (o.s === 1) o.s++`), and tsc judges the
+        // narrowed type, so that one is read first, before the narrowing ends below.
+        operand_type = Some(
+            match super::super::narrow::narrowed_member_type(member, scoping, ctx) {
+                Some(narrowed) => narrowed,
+                None => infer_member_access_type(
+                    object_type,
+                    &member.property.name,
+                    member.property.span,
+                    ctx,
+                ),
+            },
+        );
         // The property holds a new value afterwards, so what a guard narrowed it to
         // ends, the rule narrow_member_on_assignment applies to a plain write. Nothing
         // is inserted in its place: the result is a number, and whether that fits the
         // property's declared type is the update's own check, which tsc reports under
-        // its own code (TS2356) and this checker does not report at all.
+        // its own code (TS2356).
         if let Some(reference) = path_of_member(member, scoping) {
             ctx.narrow
                 .remove_path_prefix(reference.symbol_id, &reference.path);
+        }
+    }
+    if let Some(operand) = operand_type {
+        let error_ty = ctx.arena.error();
+        let any_ty = ctx.arena.any();
+        let number_ty = ctx.arena.number();
+        // An operand that may be null or undefined is tsc's own flow question (its
+        // TS18048 family): after an assignment inside an IIFE the flow type is number,
+        // before one it is the union. This checker does not track the flow of an update
+        // operand, so such an operand stays silent rather than guessed at.
+        let (may_null, may_undefined) = nullish_members(ctx, operand);
+        if operand != error_ty
+            && operand != any_ty
+            && !may_null
+            && !may_undefined
+            && !ctx.semantic().is_assignable(operand, number_ty)
+            && !may_be_unknown(ctx, operand)
+        {
+            ctx.error(
+                crate::diagnostic_messages::messages::arithmetic_operand_invalid(),
+                update.span,
+            );
         }
     }
     ctx.arena.number()

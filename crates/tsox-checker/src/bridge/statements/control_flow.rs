@@ -33,6 +33,12 @@ pub(super) fn check_if_statement(
     scoping: &Scoping,
     ctx: &mut CheckContext<'_, '_>,
 ) {
+    // Snapshot the tautology set BEFORE the test is evaluated, since evaluating the test runs
+    // `widen_if_narrowed`, which adds the test's tautology names to the set. The snapshot lets
+    // `check_if_statement` restore the pre-test state when the code after this `if` is
+    // reachable, so a tautology in this test does not suppress a later, reachable comparison.
+    let tautologies_before = ctx.tautology_compared_names.clone();
+
     let test_type = infer_expression_type(&if_stmt.test, scoping, ctx);
     super::super::expressions::check_truthiness(&if_stmt.test, test_type, ctx);
 
@@ -63,6 +69,17 @@ pub(super) fn check_if_statement(
         (false, false) => join_states(&consequent_end, &alternate_end, &mut ctx.arena),
         (true, true) => outer_narrow,
     };
+
+    // Keep the tautology set only when the code after this `if` is dead — i.e. exactly one
+    // branch always exits and the other does not, so flow falls into the non-exiting branch
+    // and never reaches the statement after the `if`. In every other case (both branches
+    // fall through, or both exit) the next statement is either reachable or unreachable for
+    // unrelated reasons, and the tautology must not suppress a later comparison.
+    let next_is_dead = (consequent_always_exits && !alternate_always_exits)
+        || (!consequent_always_exits && alternate_always_exits);
+    if !next_is_dead {
+        ctx.tautology_compared_names = tautologies_before;
+    }
 }
 
 // How many times a loop is walked silently, looking for the state its head settles on,

@@ -27,6 +27,7 @@ mod syntax_repair;
 mod tuple_grammar;
 mod unreachable_code;
 mod unresolved_names;
+mod use_before_declaration;
 
 use oxc_allocator::Allocator;
 use oxc_ast::ast::Program;

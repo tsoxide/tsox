@@ -406,7 +406,7 @@
 "compiler__declarationEmitEnumReferenceViaImportEquals/index.ts": {"v":"MATCH","lines":[]},
 "compiler__declarationEmitEnumReferenceViaImportEquals/test.ts": {"v":"MATCH","lines":[]},
 "compiler__declarationEmitEnumReferenceViaImportEquals/translation.ts": {"v":"MATCH","lines":[]},
-"compiler__declarationEmitExpandoPropertyPrivateName/a.ts": {"v":"GAP","lines":[{"line":2,"result":"gap","tsox":[],"tsc":["TS2352 Conversion of type 'null' to type 'I' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."]}]},
+"compiler__declarationEmitExpandoPropertyPrivateName/a.ts": {"v":"MATCH","lines":[{"line":2,"result":"exact","tsox":["TS2352 Conversion of type 'null' to type 'I' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."],"tsc":["TS2352 Conversion of type 'null' to type 'I' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."]}]},
 "compiler__declarationEmitExpandoPropertyPrivateName/b.ts": {"v":"MATCH","lines":[]},
 "compiler__declarationEmitExportAliasVisibiilityMarking/Card.ts": {"v":"MATCH","lines":[]},
 "compiler__declarationEmitExportAliasVisibiilityMarking/Types.ts": {"v":"MATCH","lines":[]},
