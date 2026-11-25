@@ -33,6 +33,12 @@ pub(super) fn check_if_statement(
     scoping: &Scoping,
     ctx: &mut CheckContext<'_, '_>,
 ) {
+    // Snapshot the tautology set BEFORE the test is evaluated, since evaluating the test runs
+    // `widen_if_narrowed`, which adds the test's tautology names to the set. The snapshot lets
+    // `check_if_statement` restore the pre-test state when the code after this `if` is
+    // reachable, so a tautology in this test does not suppress a later, reachable comparison.
+    let tautologies_before = ctx.tautology_compared_names.clone();
+
     let test_type = infer_expression_type(&if_stmt.test, scoping, ctx);
     super::super::expressions::check_truthiness(&if_stmt.test, test_type, ctx);
 
@@ -63,6 +69,17 @@ pub(super) fn check_if_statement(
         (false, false) => join_states(&consequent_end, &alternate_end, &mut ctx.arena),
         (true, true) => outer_narrow,
     };
+
+    // Keep the tautology set only when the code after this `if` is dead — i.e. exactly one
+    // branch always exits and the other does not, so flow falls into the non-exiting branch
+    // and never reaches the statement after the `if`. In every other case (both branches
+    // fall through, or both exit) the next statement is either reachable or unreachable for
+    // unrelated reasons, and the tautology must not suppress a later comparison.
+    let next_is_dead = (consequent_always_exits && !alternate_always_exits)
+        || (!consequent_always_exits && alternate_always_exits);
+    if !next_is_dead {
+        ctx.tautology_compared_names = tautologies_before;
+    }
 }
 
 // How many times a loop is walked silently, looking for the state its head settles on,
@@ -357,6 +374,23 @@ pub(super) fn check_for_of_statement(
 ) {
     let iterable = infer_expression_type(&for_of.right, scoping, ctx);
     let element = for_of_element_type(iterable, ctx);
+    // `for (x of xs)` / `for (o.p of xs)` assigns each element to an existing target, so an
+    // element the target cannot hold is TS2322 on the target (tsc reports it at the left
+    // side). A declaration on the left is bound instead, and a destructuring target is
+    // left unchecked (`resolve_assignment_target_type` returns `None` for it).
+    if let Some(target) = for_of.left.as_assignment_target()
+        && let Some(target_type) =
+            super::super::expressions::resolve_assignment_target_type(target, scoping, ctx)
+        && target_type != ctx.arena.any()
+        && !ctx.is_assignable_instantiating(element, target_type)
+    {
+        let message = crate::diagnostic_messages::messages::declared_type_mismatch(
+            &ctx.arena,
+            element,
+            target_type,
+        );
+        ctx.error(message, target.span());
+    }
     check_for_each(
         for_of.span(),
         &for_of.left,

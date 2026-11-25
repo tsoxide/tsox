@@ -34,6 +34,7 @@ the message function that builds it, and the code areas that call that function 
 | TSR1028 | `PropertyNotAssignableToIndex` | TS2411 | `property_not_assignable_to_index` | `tsox-checker/bridge/class_implements` |
 | TSR1029 | `DuplicateIndexSignature` | TS2374 | `duplicate_index_signature` | `tsox-checker/bridge/class_implements` |
 | TSR1030 | `MissingOverrideModifier` | TS4114 | `missing_override_modifier` | `tsox-checker/bridge/class_implements` |
+| TSR1031 | `ArithmeticOperandInvalid` | TS2356 | `arithmetic_operand_invalid` | `tsox-checker/bridge/expressions` |
 | TSR1101 | `NotCallable` | TS2349 | `not_callable` | `tsox-checker/bridge/expressions` |
 | TSR1102 | `ArgumentArityMismatch` | TS2554 | `argument_arity_exact`, `argument_arity_range` | `tsox-checker/bridge/expressions` |
 | TSR1103 | `NotConstructor` | TS2351 | `not_a_constructor` | `tsox-checker/bridge/expressions` |
@@ -58,6 +59,7 @@ the message function that builds it, and the code areas that call that function 
 | TSR1216 | `PromiseResolveNeedsValue` | TS2794 | `promise_resolve_needs_value` | `tsox-checker/bridge/expressions` |
 | TSR1217 | `ImportTypeOnlyValue` | TS1361 | `import_type_only_value` | `tsox-checker/bridge/expressions` |
 | TSR1218 | `PropertyNeedsNewerLib` | TS2550 | `property_needs_newer_lib` | `tsox-checker/bridge/expressions` |
+| TSR1219 | `ClassUsedBeforeDeclaration` | TS2449 | `class_used_before_declaration` | `tsox-checker/bridge/use_before_declaration` |
 | TSR1301 | `ArrayDestructuringRequiresArray` | TS2488 | `array_destructuring_requires_array` | `tsox-checker/bridge/statements` |
 | TSR1401 | `ImplicitAnyParameter` | TS7006 | `parameter_implicitly_any` | `tsox-checker/bridge/implicit_any`, `tsox-checker/bridge/mod`, `tsox-checker/bridge/statements` |
 | TSR1402 | `ImplicitAnyElement` | TS7053 | `element_implicitly_any` | `tsox-checker/bridge/expressions` |

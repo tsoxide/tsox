@@ -160,6 +160,15 @@ pub(super) fn infer_as_expression_type(
 // of different kinds, or a primitive meets an object type that has required properties; a
 // pair that is merely not assignable either way may still be comparable (optional members,
 // unions, generics), and is left alone.
+//
+// `null` and `undefined` are their own kind: tsc reports `null as number`, `undefined as string`,
+// `null as object` and `{} as null` as TS2352 because a nullish value is not comparable to a
+// primitive or to an object with required properties, and an object with required properties is
+// not comparable to a nullish type. `null as any`, `null as unknown`, `null as null` and
+// `undefined as undefined` are left alone, since `any`/`unknown` are comparable to everything and
+// each nullish type is comparable to itself. An empty object (`{}`) reads as `Kind::Other` and
+// stays silent against a primitive, matching tsc (an empty object is comparable to any object
+// type because it has no required members to conflict).
 fn assertion_has_no_overlap(
     ctx: &mut CheckContext<'_, '_>,
     source: TypeId,
@@ -171,24 +180,77 @@ fn assertion_has_no_overlap(
         Number,
         Boolean,
         Object,
+        Empty,
+        Nullish,
         Other,
     }
     let kind_of = |ctx: &CheckContext<'_, '_>, type_id: TypeId| match ctx.arena.get(type_id) {
         Type::String | Type::StringLiteral(_) => Kind::String,
         Type::Number | Type::NumberLiteral(_) => Kind::Number,
         Type::Boolean | Type::BooleanLiteral(_) => Kind::Boolean,
+        // `never` is the bottom type: it is assignable to everything, so it is comparable to
+        // everything and never produces TS2352 (`{} as never`, `never as T`). It reads as
+        // `Other`, which bails out below.
+        Type::Null | Type::Undefined => Kind::Nullish,
+        // The `object` keyword and a non-empty object type with no string index both read as
+        // an object with required members, so they are not comparable to a primitive or a
+        // nullish type.
+        Type::NonPrimitive => Kind::Object,
         Type::Object(object)
             if object.properties.iter().any(|p| !p.optional) && object.string_index.is_none() =>
         {
             Kind::Object
         }
         Type::Array(_) | Type::Tuple(_) => Kind::Object,
+        // An empty object (`{}`) has no required members, so it is comparable to any object
+        // type and to `object`; it is NOT comparable to a nullish type. Carry it as `Empty`
+        // so the nullish-vs-empty arm below can fire without forcing every empty-vs-primitive
+        // case to report (tsc leaves `{} as string` silent).
+        Type::Object(object)
+            if object.properties.is_empty()
+                && object.string_index.is_none()
+                && object.number_index.is_none() =>
+        {
+            Kind::Empty
+        }
         _ => Kind::Other,
     };
     let source_kind = kind_of(ctx, source);
     let target_kind = kind_of(ctx, target);
+    // An empty object against a primitive or another object stays silent (tsc: `{} as string`,
+    // `{} as { x: number }` are allowed). An empty object against a nullish type reports TS2352
+    // (tsc: `{} as null`, `{} as undefined`), handled before the generic `Other` bail below.
+    if (source_kind == Kind::Empty && target_kind == Kind::Nullish)
+        || (source_kind == Kind::Nullish && target_kind == Kind::Empty)
+    {
+        return true;
+    }
     if source_kind == Kind::Other || target_kind == Kind::Other {
         return false;
+    }
+    // A nullish type against a primitive, an object with required properties, or the *other*
+    // nullish type (`null as undefined`, `undefined as null`) has no overlap, as tsc reports.
+    // A nullish type against itself (`null as null`, `undefined as undefined`) is comparable
+    // and must not fire. The arena's `Type::Null` and `Type::Undefined` carry that distinction.
+    if source_kind == Kind::Nullish && target_kind == Kind::Nullish {
+        return !ctx.arena.get(source).eq(&ctx.arena.get(target));
+    }
+    // Two objects with required properties that share no property name have no overlap, as tsc
+    // reports for `{ x: number } as { y: number }`. A shared name leaves the comparison to the
+    // general assignability fallback below, since the named properties might be compatible.
+    if source_kind == Kind::Object && target_kind == Kind::Object {
+        let (Type::Object(src_obj), Type::Object(tgt_obj)) =
+            (ctx.arena.get(source), ctx.arena.get(target))
+        else {
+            return false;
+        };
+        let share_a_name = src_obj
+            .properties
+            .iter()
+            .any(|ap| tgt_obj.properties.iter().any(|bp| ap.name == bp.name));
+        if !share_a_name {
+            return true;
+        }
     }
     let primitive = |kind: &Kind| !matches!(kind, Kind::Object | Kind::Other);
     if !(primitive(&source_kind) || primitive(&target_kind)) {

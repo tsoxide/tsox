@@ -16,7 +16,12 @@ pub fn bind_params(
     ctx: &mut CheckContext<'_, '_>,
 ) {
     for (param, declared) in params.items.iter().zip(param_types) {
+        let outer = std::mem::replace(
+            &mut ctx.check_pattern_defaults,
+            param.type_annotation.is_some(),
+        );
         bind_pattern(&param.pattern, declared.type_id, scoping, ctx);
+        ctx.check_pattern_defaults = outer;
     }
 
     if let Some(rest) = &params.rest {
@@ -68,7 +73,53 @@ fn bind_pattern_in(
         // type with undefined (and, as an over-approximation, null too) removed,
         // unioned with the default expression's own widened type.
         BindingPattern::AssignmentPattern(assignment) => {
+            // The default is checked against the type of the name it supplies (TS2322:
+            // `function f(a: number = "s")`, `{ d = "z" }: { d: number }`). A target that
+            // is `undefined` alone (a property the source lacks, where the default is what
+            // makes the name exist), `any`, `unknown`, an error type, or an element type
+            // this checker built from an array literal is not a type the program wrote, so
+            // it is left unchecked. `undefined` itself is dropped from the target, since
+            // the default is what replaces it.
+            let target = if from_array_element
+                || !ctx.check_pattern_defaults
+                || [
+                    ctx.arena.any(),
+                    ctx.arena.unknown(),
+                    ctx.arena.error(),
+                    ctx.arena.undefined(),
+                    ctx.arena.never(),
+                ]
+                .contains(&type_id)
+            {
+                None
+            } else {
+                let members = match ctx.arena.get(type_id) {
+                    Type::Union(members) => Some(members.iter().copied().collect::<Vec<_>>()),
+                    _ => None,
+                };
+                let target = match members {
+                    Some(members) => {
+                        let undefined = ctx.arena.undefined();
+                        let kept = members.into_iter().filter(|&m| m != undefined).collect();
+                        ctx.arena.alloc_union(kept)
+                    }
+                    None => type_id,
+                };
+                (target != ctx.arena.never()).then_some(target)
+            };
+            ctx.contextual = target;
             let default_type = infer_expression_type(&assignment.right, scoping, ctx);
+            if let Some(target) = target
+                && default_type != ctx.arena.undefined()
+                && !ctx.is_assignable_instantiating(default_type, target)
+            {
+                let message = crate::diagnostic_messages::messages::declared_type_mismatch(
+                    &ctx.arena,
+                    default_type,
+                    target,
+                );
+                ctx.error(message, assignment.left.span());
+            }
             let default_type = crate::types::widen(&ctx.arena, default_type);
 
             let non_nullish = narrow_to_non_nullish(&mut ctx.arena, type_id);

@@ -22,6 +22,7 @@ mod spelling;
 mod truthiness;
 
 pub(super) use assignment::narrow_on_assignment;
+pub(crate) use assignment::resolve_assignment_target_type;
 pub(super) use elaborate::report_mismatch;
 pub(super) use excess::check_excess_properties;
 pub(super) use members::infer_member_access_type;
@@ -428,9 +429,32 @@ pub(super) fn import_specifier_text(source: &Expression<'_>) -> Option<String> {
     }
 }
 
-// For `x == 1` after an earlier comparison of `x`: tsc compares the type `x` was narrowed to,
-// which can be `never` or a smaller literal, and tsox does not narrow a literal that far. So a
-// name compared before is judged on its primitive, and a literal mismatch is left alone.
+// For `x == 1` after an earlier comparison of `x`: tsc reports every comparison against the
+// variable's *declared* literal type, even after a previous impossible comparison narrowed
+// `x` to `never` in flow. So `const x = 0; if (x == 1) {} if (x == 2) {}` is two TS2367 errors
+// in tsc (`'0' and '1'`, then `'0' and '2'`), not one.
+//
+// tsox's earlier heuristic widened both operands to their base primitive on every comparison
+// after the first, which suppressed the second legitimate TS2367. That was a workaround for a
+// false positive tsox produced because it did not narrow a literal by equality in flow
+// narrowing. The proper fix lives below: only widen an operand that has *actually* been
+// narrowed away from its literal type (it is now `never`, a primitive, or some other shape
+// the literal-vs-literal arm does not model). When the operand is still its original literal
+// type — the common case at the top of a sequence of comparisons — keep it literal, so
+// `comparison_has_no_overlap` reports the mismatch exactly as tsc does.
+//
+// The narrowed-to-`never` case is left to `comparison_has_no_overlap`: `Never` reads as
+// `Kind::Other`, the function returns `false`, and no TS2367 is reported, matching tsc's
+// silence inside the true branch of an impossible comparison.
+//
+// One tsox-specific gap remains: tsox's flow analysis does not narrow a literal binding to
+// `never` after an always-true comparison that ends in `break`/`continue`/`return`/`throw`
+// (e.g. `const x = 1; if (x == 1) { break; } if (x == 2) {}`), so it cannot see that the
+// second comparison is in dead code and would falsely report TS2367 there. To bridge that
+// gap until flow narrowing of literals lands, a name whose most recent comparison was a
+// tautology — both sides the same literal, or the variable's own literal value — is tracked
+// in `tautology_compared_names`, and a later comparison of that name keeps the old widening
+// (suppress), matching tsc's silence on the dead code.
 fn widen_if_narrowed(
     bin: &oxc_ast::ast::BinaryExpression,
     left: TypeId,
@@ -461,21 +485,80 @@ fn widen_if_narrowed(
         _ => None,
     };
     let names = [name_of(&bin.left), name_of(&bin.right)];
+    // A tautology: both operands the same literal (or one name's own declared literal value
+    // compared to itself), so the comparison is always true and the following code is dead.
+    let is_tautology = match ctx.arena.get(left) {
+        crate::types::Type::StringLiteral(_)
+        | crate::types::Type::NumberLiteral(_)
+        | crate::types::Type::BooleanLiteral(_) => ctx.arena.get(left) == ctx.arena.get(right),
+        _ => false,
+    };
     let seen = names
         .iter()
         .flatten()
         .any(|name| ctx.compared_names.contains(name));
-    for name in names.into_iter().flatten() {
-        ctx.compared_names.insert(name);
+    for name in names.iter().flatten() {
+        ctx.compared_names.insert(name.clone());
     }
-    if seen {
-        (
+    // Record the tautology for `check_if_statement` to consume: when the consequent always
+    // exits, the names this test made tautologies stay in the set so a later comparison of
+    // one of them is suppressed; otherwise `check_if_statement` resets the set to its pre-test
+    // snapshot. Adding here, regardless of `seen`, is what lets the *first* comparison of a
+    // name register the tautology.
+    if is_tautology {
+        for name in names.iter().flatten() {
+            ctx.tautology_compared_names.insert(name.clone());
+        }
+    }
+    if !seen {
+        return (left, right);
+    }
+    // If the previous comparison of this name was a tautology that left the following code
+    // dead (the only case `tautology_compared_names` survives a `check_if_statement`), widen
+    // to the primitive so `comparison_has_no_overlap` does not fire, matching tsc's silence.
+    let prev_was_tautology = names
+        .iter()
+        .flatten()
+        .any(|name| ctx.tautology_compared_names.contains(name));
+    if prev_was_tautology {
+        return (
             crate::types::widen(&ctx.arena, left),
             crate::types::widen(&ctx.arena, right),
-        )
-    } else {
-        (left, right)
+        );
     }
+    // Widen only operands that are no longer their original literal type — i.e. those the
+    // flow narrowing has already reduced (to `never`, a primitive, an object, etc.). An
+    // operand that is still a literal keeps its literal type so the literal-vs-literal arm
+    // of `comparison_has_no_overlap` reports the mismatch, as tsc does on a sequence of
+    // comparisons against the same `const` literal binding.
+    let is_narrowed_away = |type_id: TypeId| match ctx.arena.get(type_id) {
+        crate::types::Type::StringLiteral(_)
+        | crate::types::Type::NumberLiteral(_)
+        | crate::types::Type::BooleanLiteral(_) => false,
+        // A union that is all literals is still literal-shaped: keep it. `comparison_has_no_overlap`
+        // already extracts `literal_members` from such a union and compares member-by-member.
+        crate::types::Type::Union(members) => !members.iter().all(|&m| {
+            matches!(
+                ctx.arena.get(m),
+                crate::types::Type::StringLiteral(_)
+                    | crate::types::Type::NumberLiteral(_)
+                    | crate::types::Type::BooleanLiteral(_)
+            )
+        }),
+        _ => true,
+    };
+    (
+        if is_narrowed_away(left) {
+            crate::types::widen(&ctx.arena, left)
+        } else {
+            left
+        },
+        if is_narrowed_away(right) {
+            crate::types::widen(&ctx.arena, right)
+        } else {
+            right
+        },
+    )
 }
 
 // TS7026 on each intrinsic (lowercase) tag of `element` and of the elements nested in it, when

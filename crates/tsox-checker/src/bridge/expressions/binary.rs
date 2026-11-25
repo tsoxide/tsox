@@ -288,7 +288,52 @@ pub(super) fn infer_binary_expression_type(
         BinaryOperator::LessThan
         | BinaryOperator::LessEqualThan
         | BinaryOperator::GreaterThan
-        | BinaryOperator::GreaterEqualThan => ctx.arena.boolean(),
+        | BinaryOperator::GreaterEqualThan => {
+            // tsc accepts a relational comparison when either side is any, when both sides
+            // are numeric (each assignable to number or bigint), or when neither is numeric
+            // and the two are comparable (related in some direction: the same type, two
+            // strings, two instances of a shared base). That third branch is why `date <
+            // date` and `obj < obj` pass while `string < number` and two unrelated
+            // interfaces are TS2365, one error on the whole expression. Literal types are
+            // widened to their base primitive first, so `"a" < "b"` reads as string <
+            // string and a union of number literals counts as numeric.
+            let error_ty = ctx.arena.error();
+            if left == error_ty || right == error_ty {
+                return ctx.arena.boolean();
+            }
+            // tsc has its own code for an `unknown` operand (TS18046) and for a `symbol`
+            // one (TS2469); neither is modeled here, so such an operand stays silent
+            // rather than being reported under this code.
+            if may_be_unknown(ctx, left) || may_be_unknown(ctx, right) {
+                return ctx.arena.boolean();
+            }
+            let any_ty = ctx.arena.any();
+            if left == any_ty || right == any_ty {
+                return ctx.arena.boolean();
+            }
+            let left = widen_for_comparison(ctx, left);
+            let right = widen_for_comparison(ctx, right);
+            let number_ty = ctx.arena.number();
+            let left_numeric = ctx.semantic().is_assignable(left, number_ty);
+            let right_numeric = ctx.semantic().is_assignable(right, number_ty);
+            let ok = if left_numeric && right_numeric {
+                true
+            } else if !left_numeric && !right_numeric {
+                relational_comparable(ctx, left, right)
+            } else {
+                false
+            };
+            if !ok {
+                let operator = match operator {
+                    BinaryOperator::LessThan => "<",
+                    BinaryOperator::LessEqualThan => "<=",
+                    BinaryOperator::GreaterThan => ">",
+                    _ => ">=",
+                };
+                push_binary_op_mismatch(ctx, span, operator, left, right);
+            }
+            ctx.arena.boolean()
+        }
 
         // JavaScript's + is overloaded: string concatenation if either side could
         // be a string, otherwise numeric addition if both sides could be numbers.
@@ -426,7 +471,7 @@ pub(super) fn infer_binary_expression_type(
 }
 
 // Whether `unknown` is the type or one of a union's members.
-fn may_be_unknown(ctx: &CheckContext<'_, '_>, id: TypeId) -> bool {
+pub(super) fn may_be_unknown(ctx: &CheckContext<'_, '_>, id: TypeId) -> bool {
     match ctx.arena.get(id) {
         Type::Unknown => true,
         Type::Union(members) => members
@@ -434,6 +479,89 @@ fn may_be_unknown(ctx: &CheckContext<'_, '_>, id: TypeId) -> bool {
             .any(|&member| matches!(ctx.arena.get(member), Type::Unknown)),
         _ => false,
     }
+}
+
+// The widening tsc applies to a relational operand before comparing it
+// (getBaseTypeOfLiteralTypeForComparison): a literal becomes its base
+// primitive, and a union whose members all widen to the same primitive
+// collapses to that primitive ("a" | "b" reads as string, 1 | 2 as number).
+fn widen_for_comparison(ctx: &CheckContext<'_, '_>, id: TypeId) -> TypeId {
+    if let Type::Union(members) = ctx.arena.get(id) {
+        let widened = members
+            .iter()
+            .map(|&m| crate::types::widen(&ctx.arena, m))
+            .collect::<Vec<_>>();
+        if widened.iter().all(|&w| w == widened[0]) {
+            return widened[0];
+        }
+        return id;
+    }
+    crate::types::widen(&ctx.arena, id)
+}
+
+// Whether a type parameter or a union holding one is a member: tsc's comparable relation
+// reads a type parameter as its constraint, and an unconstrained one as unknown, which is
+// comparable to everything. Where this checker cannot decide the instantiation, staying
+// quiet is right.
+fn generic_like(ctx: &CheckContext<'_, '_>, id: TypeId) -> bool {
+    match ctx.arena.get(id) {
+        Type::GenericParameter(..) => true,
+        Type::Union(members) => members
+            .iter()
+            .any(|&m| matches!(ctx.arena.get(m), Type::GenericParameter(..))),
+        _ => false,
+    }
+}
+
+// tsc's comparable relation is looser than assignability, and the difference shows in
+// the corpus: a type parameter is comparable to everything, method and construct
+// signatures compare their parameters bivariantly, and arrays compare element-wise.
+// This approximation accepts exactly those shapes besides plain assignability, so the
+// comparisons it still rejects are the ones with nothing in common: two primitives of
+// different kinds, a primitive against an object, and two objects sharing no member.
+fn relational_comparable(ctx: &mut CheckContext<'_, '_>, left: TypeId, right: TypeId) -> bool {
+    if generic_like(ctx, left) || generic_like(ctx, right) {
+        return true;
+    }
+    // tsc's comparable relation holds for a union on either side when any one member is
+    // comparable (`"ABC" | "XYZ" | number` against `string` is fine through the string
+    // literals). Each literal member is widened first, as for a plain comparison.
+    for (union_side, other) in [(left, right), (right, left)] {
+        if let Type::Union(members) = ctx.arena.get(union_side) {
+            let members = members.iter().copied().collect::<Vec<_>>();
+            return members.into_iter().any(|member| {
+                let member = crate::types::widen(&ctx.arena, member);
+                let other = widen_for_comparison(ctx, other);
+                relational_comparable(ctx, member, other)
+            });
+        }
+    }
+    if ctx.semantic().is_assignable(left, right) || ctx.semantic().is_assignable(right, left) {
+        return true;
+    }
+    let shape_compatible = |ctx: &CheckContext<'_, '_>, a: TypeId, b: TypeId| match (
+        ctx.arena.get(a),
+        ctx.arena.get(b),
+    ) {
+        // Two function types (a plain one or a `new (...) => T` construct signature):
+        // bivariance means this stays quiet.
+        (Type::Function(_), Type::Function(_)) => true,
+        // Two arrays or tuples: element-wise comparability, quiet.
+        (Type::Array(_), Type::Array(_))
+        | (Type::Array(_), Type::Tuple(_))
+        | (Type::Tuple(_), Type::Array(_))
+        | (Type::Tuple(_), Type::Tuple(_)) => true,
+        // Two object shapes: sharing a member name is what bivariance turns into a
+        // match, so any shared name keeps this quiet.
+        (Type::Object(a_obj), Type::Object(b_obj)) => a_obj.properties.iter().any(|a_prop| {
+            b_obj
+                .properties
+                .iter()
+                .any(|b_prop| a_prop.name == b_prop.name)
+        }),
+        _ => false,
+    };
+    shape_compatible(ctx, left, right)
 }
 
 // Both mismatch sites above (`+` and the arithmetic group) need the same

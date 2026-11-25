@@ -50,6 +50,7 @@ pub enum DiagnosticCode {
     PropertyNotAssignableToIndex,
     DuplicateIndexSignature,
     MissingOverrideModifier,
+    ArithmeticOperandInvalid,
 
     // 1100s: calls
     NotCallable,
@@ -78,6 +79,7 @@ pub enum DiagnosticCode {
     NoDefaultExport,
     TypeUsedAsValue,
     ImportTypeOnlyValue,
+    ClassUsedBeforeDeclaration,
 
     // 1300s: destructuring
     ArrayDestructuringRequiresArray,
@@ -285,6 +287,7 @@ impl DiagnosticCode {
             PropertyNotAssignableToIndex => "TSR1028",
             DuplicateIndexSignature => "TSR1029",
             MissingOverrideModifier => "TSR1030",
+            ArithmeticOperandInvalid => "TSR1031",
 
             NotCallable => "TSR1101",
             ArgumentArityMismatch => "TSR1102",
@@ -311,6 +314,7 @@ impl DiagnosticCode {
             NoDefaultExport => "TSR1205",
             TypeUsedAsValue => "TSR1206",
             ImportTypeOnlyValue => "TSR1217",
+            ClassUsedBeforeDeclaration => "TSR1219",
 
             ArrayDestructuringRequiresArray => "TSR1301",
 
@@ -514,6 +518,7 @@ impl DiagnosticCode {
             PropertyNotAssignableToIndex => 2411,
             DuplicateIndexSignature => 2374,
             MissingOverrideModifier => 4114,
+            ArithmeticOperandInvalid => 2356,
 
             NotCallable => 2349,
             NotConstructor => 2351,
@@ -540,6 +545,7 @@ impl DiagnosticCode {
             NoDefaultExport => 1192,
             TypeUsedAsValue => 2693,
             ImportTypeOnlyValue => 1361,
+            ClassUsedBeforeDeclaration => 2449,
 
             ArrayDestructuringRequiresArray => 2488,
 

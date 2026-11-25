@@ -148,6 +148,15 @@ pub fn max_bracket_depth(source: &str) -> usize {
                 angle = 0;
             }
             b',' => chain = 0,
+            // `else if` chains nest one level per link in the parser, with no bracket on the
+            // outside of the chain to count, so each link counts like a conditional's `?`. A
+            // plain `if` starts a chain over.
+            b'e' if is_word(bytes, index, b"else") && followed_by_if(bytes, index + 4) => {
+                chain += 1;
+                deepest = deepest.max(depth + chain + angle);
+                index += 3;
+            }
+            b'i' if is_word(bytes, index, b"if") && !preceded_by_else(bytes, index) => chain = 0,
             b'\n' if starts_a_statement(&bytes[index + 1..]) => {
                 chain = 0;
                 angle = 0;
@@ -157,6 +166,29 @@ pub fn max_bracket_depth(source: &str) -> usize {
         index += 1;
     }
     deepest
+}
+
+fn is_word(bytes: &[u8], at: usize, word: &[u8]) -> bool {
+    let name_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
+    bytes[at..].starts_with(word)
+        && (at == 0 || !name_byte(bytes[at - 1]))
+        && bytes.get(at + word.len()).is_none_or(|b| !name_byte(*b))
+}
+
+// Whether the next word after `at`, past whitespace, is `if`.
+fn followed_by_if(bytes: &[u8], at: usize) -> bool {
+    let rest = &bytes[at..];
+    let skip = rest.iter().take_while(|b| b.is_ascii_whitespace()).count();
+    skip > 0 && is_word(rest, skip, b"if")
+}
+
+// Whether the word before `at`, past whitespace, is `else`.
+fn preceded_by_else(bytes: &[u8], at: usize) -> bool {
+    let end = bytes[..at]
+        .iter()
+        .rposition(|b| !b.is_ascii_whitespace())
+        .map_or(0, |i| i + 1);
+    end >= 4 && is_word(&bytes[..end], end - 4, b"else")
 }
 
 // Whether the text after a line break begins a new statement, by its first word, so a file
@@ -238,6 +270,16 @@ mod tests {
             ">".repeat(10_000)
         );
         assert!(max_bracket_depth(&generics) >= 10_000);
+    }
+
+    #[test]
+    fn an_else_if_chain_counts_as_depth_and_separate_chains_do_not_add_up() {
+        let chain = "if (a) { n = 1; }".to_string() + &" else if (a) { n = 1; }".repeat(5_000);
+        assert!(max_bracket_depth(&chain) >= 5_000);
+        let separate = "if (a) { n = 1; } else if (b) { n = 2; } else { n = 3; }\n".repeat(5_000);
+        assert!(max_bracket_depth(&separate) < 10);
+        let minified = "if(a){n=1}else if(b){n=2}".repeat(5_000);
+        assert!(max_bracket_depth(&minified) < 10);
     }
 
     #[test]

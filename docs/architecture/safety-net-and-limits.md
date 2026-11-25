@@ -33,7 +33,7 @@ So three questions decide the design. Can the file be refused before anything re
 
 | Layer | What it does | What it covers | What it cannot do |
 | --- | --- | --- | --- |
-| A deeper stack | Workers and discovery run on 64 MB | Ordinary deep code, the gap between the main thread and spawned threads | Remove the limit; it only moves it |
+| A deeper stack | Workers and discovery run on 16 MB | Ordinary deep code, the gap between the main thread and spawned threads | Remove the limit; it only moves it |
 | The stack guard | The checker's own recursion asks if the stack is nearly used up | Our walks | Reach the parser, which recurses on its own |
 | Refuse before the parse | One pass over the bytes counts nesting and refuses a file past a limit | The parser's recursion | Be exact: it is a count, not a parse |
 
@@ -41,7 +41,7 @@ So three questions decide the design. Can the file be refused before anything re
 
 **Problem.** A project run aborted on one file that is a single chain of about 1,500 `+` operators (TypeScript's own `binderBinaryExpressionStress`). It parses into a left-nested tree 1,500 levels deep, and walking it recurses once per level inside Oxc's visitors, about 16,000 frames in the backtrace. That code is not ours to make iterative. The same file passed when it was the only one checked, because that runs on the main thread, whose stack is about 8 MB. Rayon's workers are spawned threads, and a spawned thread gets about 2 MB by default.
 
-**Picked.** Build the workers with a 64 MB stack. It is address space that is only touched where a file really recurses deeply, so ordinary runs use no more memory. Graph discovery and the CLI's flat mode run on the same size, so a file discovery can parse is a file a worker can parse. The old workaround had been to export `RUST_MIN_STACK` before running.
+**Picked.** Build the workers with a 16 MB stack. It is address space that is only touched where a file really recurses deeply, so ordinary runs use no more memory. Graph discovery and the CLI's flat mode run on the same size, so a file discovery can parse is a file a worker can parse. The old workaround had been to export `RUST_MIN_STACK` before running.
 
 **Cost.** A chain several times longer would still overflow. Fixing that for good needs a depth limit in the parser or an iterative walk, and both are Oxc's to provide.
 
@@ -57,7 +57,7 @@ So three questions decide the design. Can the file be refused before anything re
 
 **Tried, and why it was not enough.** A guard in the checker's own walks cannot reach the parser's. A bigger stack moves the limit and does not remove it.
 
-**Picked.** `crates/tsox-base/src/source_depth.rs` counts the nesting of `(`, `[` and `{` in one pass over the bytes before the parser sees the file, and refuses a file nested past `MAX_BRACKET_DEPTH` (4,000) with an error that says so. The count skips comments, strings and template literals, and uses a counter and not recursion, so it is safe at any depth. It is used before every parse: in the checker, and in the walk that finds a file's imports. On a release build every bracketed shape tried, from parentheses to nested classes, was refused at 10,000 and at 100,000 levels with no abort. The limit leaves a factor of about five under the point where a debug build aborts on the worst construct measured (nested objects, about 20,000 levels), and real code nests a few dozen levels.
+**Picked.** `crates/tsox-base/src/source_depth.rs` counts the nesting of `(`, `[` and `{` in one pass over the bytes before the parser sees the file, and refuses a file nested past `MAX_BRACKET_DEPTH` (1,024) with an error that says so. The count skips comments, strings and template literals, and uses a counter and not recursion, so it is safe at any depth. It is used before every parse: in the checker, and in the walk that finds a file's imports. On a release build every bracketed shape tried, from parentheses to nested classes, was refused at 10,000 and at 100,000 levels with no abort. The limit leaves a factor of about six under the point where a debug build aborts on the worst construct measured on a 16 MB stack (nested objects, about 6,000 levels); the limit is the stack size divided by 16 KiB, so the two move together, and real code nests a few dozen levels.
 
 **Extended.** Three shapes recurse in the parser as deeply as brackets do and have none to count: a conditional chain (`c ? 1 : c ? 2 : ...`), an arrow chain (`y => y => ...`) and nested generic arguments (`Array<Array<...>>`). A `?` that starts a conditional and a `=>` each add one to a chain counter, and a `<` that follows a name adds one to an angle counter until a `>` takes it off, so the answer is how far the parser would recurse. `crates/tsox-cli/tests/depth_guard.rs` runs generated nests of each through the real binary.
 

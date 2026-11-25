@@ -13,7 +13,7 @@ use oxc_semantic::Scoping;
 use super::context::CheckContext;
 use super::{
     class_implements, duplicate_members, duplicates, implicit_any, parameter_properties,
-    strict_mode_names, tuple_grammar, unreachable_code, unresolved_names,
+    strict_mode_names, tuple_grammar, unreachable_code, unresolved_names, use_before_declaration,
 };
 
 /// What a whole-file pass is given. Passes that need less ignore the rest.
@@ -71,6 +71,13 @@ pub(super) const PASSES: &[Pass] = &[
         name: "tuple_grammar",
         doc: "Reports misplaced optional, rest and named elements in tuple types.",
         run: |program, _, ctx| tuple_grammar::report_tuple_grammar_errors(program, ctx),
+    },
+    Pass {
+        name: "use_before_declaration",
+        doc: "Reports a class read before its declaration where the read is evaluated at that point.",
+        run: |program, scoping, ctx| {
+            use_before_declaration::report_class_use_before_declaration(program, scoping, ctx);
+        },
     },
     Pass {
         name: "unreachable_code",

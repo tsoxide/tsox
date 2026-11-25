@@ -308,8 +308,63 @@ fn check_interface<'ast>(
                 ),
                 interface.id.span,
             );
+            continue;
+        }
+        // tsc also reports TS2430 when the derived interface's string or number index
+        // signature is not a subtype of the base's, even when every named property agrees
+        // (`interface G extends E, F` where the two bases' index signatures disagree). The
+        // whole-object `is_subtype` check above does not fire here because tsox's index
+        // signatures are not part of the property walk `first_incompatible_property` runs.
+        if let Some(kind) = first_incompatible_index(ctx, derived, base) {
+            ctx.error(
+                crate::diagnostic_messages::messages::interface_incorrectly_extends(
+                    &ctx.arena,
+                    &interface.id.name,
+                    derived,
+                    base,
+                ),
+                interface.id.span,
+            );
+            let _ = kind; // reported via the same message as a property mismatch
         }
     }
+}
+
+// The first index signature (string or number) the derived interface declares or inherits that
+// is not a subtype of the base's corresponding index signature, as tsc's TS2430 check sees it.
+// Returns `"string"` or `"number"` so a caller can name the key kind in a future, more
+// specific message; today both kinds share the generic `interface_incorrectly_extends` message.
+fn first_incompatible_index(
+    ctx: &CheckContext<'_, '_>,
+    derived: crate::arena::TypeId,
+    base: crate::arena::TypeId,
+) -> Option<&'static str> {
+    use crate::types::Type;
+    let (Type::Object(derived_obj), Type::Object(base_obj)) =
+        (ctx.arena.get(derived), ctx.arena.get(base))
+    else {
+        return None;
+    };
+    for (derived_idx, base_idx, label) in [
+        (
+            derived_obj.string_index.as_ref(),
+            base_obj.string_index.as_ref(),
+            "string",
+        ),
+        (
+            derived_obj.number_index.as_ref(),
+            base_obj.number_index.as_ref(),
+            "number",
+        ),
+    ] {
+        let (Some(derived_idx), Some(base_idx)) = (derived_idx, base_idx) else {
+            continue;
+        };
+        if !crate::subtyping::is_subtype(&ctx.arena, derived_idx.value, base_idx.value) {
+            return Some(label);
+        }
+    }
+    None
 }
 
 fn check_index_signatures<'ast>(

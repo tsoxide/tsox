@@ -246,6 +246,13 @@ pub mod messages {
         )
     }
 
+    pub fn arithmetic_operand_invalid() -> DiagnosticMessage {
+        DiagnosticMessage::new(
+            DiagnosticCode::ArithmeticOperandInvalid,
+            "An arithmetic operand must be of type 'any', 'number', 'bigint' or an enum type.",
+        )
+    }
+
     pub fn argument_not_assignable(
         arena: &TypeArena,
         actual: TypeId,
@@ -884,6 +891,13 @@ pub mod messages {
         DiagnosticMessage::new(
             DiagnosticCode::UnresolvedIdentifier,
             format!("Cannot find name '{name}'."),
+        )
+    }
+
+    pub fn class_used_before_declaration(name: &str) -> DiagnosticMessage {
+        DiagnosticMessage::new(
+            DiagnosticCode::ClassUsedBeforeDeclaration,
+            format!("Class '{name}' used before its declaration."),
         )
     }
 

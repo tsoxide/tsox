@@ -18,8 +18,10 @@ use std::sync::Mutex;
 // stop with a diagnostic and an error type instead of recursing.
 
 /// The stack the checker's own threads are given. The project worker pool uses the same
-/// size, so a file discovery could parse is a file a worker can parse.
-pub const BIG_STACK_BYTES: usize = 64 * 1024 * 1024;
+/// size, so a file discovery could parse is a file a worker can parse. It is address space: the
+/// pages are only backed where a file really recurses deeply. `Budget::bracket_depth` is
+/// derived from it.
+pub const BIG_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 /// Every numeric limit a walk of the checker may reach, in one place. A walk that reaches one
 /// stops and records its `CutReason`, so a cut is never silent. The stack limit is not a
@@ -44,7 +46,10 @@ pub const BUDGET: Budget = Budget {
     instantiation_depth: 100,
     instantiations: 5_000_000,
     recursive_applications: 100,
-    bracket_depth: 4_000,
+    // A sixteenth of a kibibyte of stack per level: 1,024 levels on the 16 MB stack. The worst
+    // construct measured (nested objects) aborts a debug build at about 6,000 levels on that
+    // stack, so this keeps a factor of about six; it moves with the stack, never apart from it.
+    bracket_depth: BIG_STACK_BYTES / (16 * 1024),
 };
 
 impl Budget {
@@ -61,9 +66,9 @@ impl Budget {
 
 /// How deeply a file may nest `(`, `[` and `{` before it is refused without being parsed.
 ///
-/// The stack guard cannot reach the parser's recursion, and in a debug build on a 64 MB
-/// stack the worst construct measured, nested objects, aborts at about 20,000 levels. This
-/// leaves a factor of five. Real code nests a few dozen levels, so the refusal is for a
+/// The stack guard cannot reach the parser's recursion, and in a debug build on a 16 MB
+/// stack the worst construct measured, nested objects, aborts at about 6,000 levels. This
+/// leaves a factor of about six. Real code nests a few dozen levels, so the refusal is for a
 /// file built to be deep, and it is made before the parse so that nothing can abort first.
 pub const MAX_BRACKET_DEPTH: usize = BUDGET.bracket_depth;
 
@@ -208,7 +213,7 @@ pub fn on_big_stack<R: Send>(work: impl FnOnce() -> R + Send) -> R {
     })
 }
 
-/// Runs `work` on a thread with a 64 MB stack and the checker's recursion guard armed.
+/// Runs `work` on a thread with a `BIG_STACK_BYTES` stack and the checker's recursion guard armed.
 ///
 /// A caller that checks untrusted source on a thread of its own, such as an editor or a
 /// server, can wrap the call in this so that a deeply nested file is answered with a

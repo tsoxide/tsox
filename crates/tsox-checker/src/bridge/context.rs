@@ -153,6 +153,12 @@ pub struct CheckContext<'ast, 'src> {
     /// Names already compared with `==` or `===`: such a comparison narrows the name for the
     /// code after it, so a later literal comparison is not judged on the declared literal type.
     pub compared_names: std::collections::HashSet<String>,
+    /// Subset of `compared_names` whose most recent comparison was a tautology — both operands
+    /// the same literal (or the variable's own literal value), making the comparison always
+    /// true. Code after `if (x == 1) { break; }` when `x: 1` is unreachable, and tsc silences a
+    /// later `x == 2` there. tsox's flow narrowing does not narrow a literal to `never`, so this
+    /// set carries that signal forward for the next comparison of the same name.
+    pub tautology_compared_names: std::collections::HashSet<String>,
     /// Start offsets of comma expressions that are the callee of an indirect call, `(0, o.f)()`,
     /// whose unused left side tsc does not report (its `isIndirectCall`).
     pub indirect_call_sequences: std::collections::HashSet<u32>,
@@ -184,6 +190,10 @@ pub struct CheckContext<'ast, 'src> {
     // very next function expression checked is known to have no contextual
     // `this`, so its body should run with implicit_this set. Consumed on entry.
     pub next_function_has_no_this: bool,
+    // Set while a pattern is bound from a type the program wrote (an annotated parameter or
+    // declarator): only then is a default inside the pattern checked against the type of the
+    // name it supplies. A type inferred from an initializer is not one tsc holds a default to.
+    pub check_pattern_defaults: bool,
     // The type the call or `new` expression being checked is expected to produce, handed
     // from infer_expression_type to check_callable (which reads it before any argument is
     // inferred, since an argument's own call would overwrite it). Used as low-priority
@@ -593,6 +603,7 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             current_class_ids: Vec::new(),
             in_constructor: false,
             compared_names: Default::default(),
+            tautology_compared_names: Default::default(),
             indirect_call_sequences: Default::default(),
             expandos: Default::default(),
             var_annotations: Default::default(),
@@ -605,6 +616,7 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             bracket_access: false,
             implicit_this: false,
             next_function_has_no_this: false,
+            check_pattern_defaults: false,
             call_return_context: None,
             contextual: None,
             const_context: false,

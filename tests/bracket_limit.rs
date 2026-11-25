@@ -12,7 +12,7 @@ use tsox::{
 // builder recurse on nested brackets and nothing in the checker can stop them, so a file
 // nested far enough still aborted the run.
 // Picked: count the nesting of `(`, `[` and `{` in one pass before the parse and refuse a
-// file past 4,000 levels, which is a fifth of where the worst construct aborts a debug build.
+// file past 1,024 levels, which is a sixth of where the worst construct aborts a debug build.
 // Cost: a count and not a parse, so a regular expression holding a quote or a backtick can
 // skew it for a line; the limit is far above real code, so only a file built to be deep is
 // affected.
@@ -64,8 +64,8 @@ fn a_file_just_inside_the_limit_is_parsed_and_checked() {
     for opener in ['(', '['] {
         let source = format!(
             "export const x = {}1{};",
-            opener.to_string().repeat(3_900),
-            closer(opener).to_string().repeat(3_900)
+            opener.to_string().repeat(1_000),
+            closer(opener).to_string().repeat(1_000)
         );
         let result = with_deep_stack(|| TypeChecker::new().check_source(&source, "a.ts"));
         assert!(result.is_ok(), "{opener}: {:?}", result.err());
@@ -125,8 +125,8 @@ fn a_file_nested_past_the_limit_is_reported_and_the_project_still_completes() {
 fn a_deep_file_inside_the_limit_is_found_and_checked_from_the_test_thread() {
     let nested = format!(
         "export const x = {}1{};",
-        "(".repeat(3_900),
-        ")".repeat(3_900)
+        "(".repeat(1_000),
+        ")".repeat(1_000)
     );
     let report = run("inside", &[("a.ts", nested)]);
     assert_eq!(report.files.len(), 1);

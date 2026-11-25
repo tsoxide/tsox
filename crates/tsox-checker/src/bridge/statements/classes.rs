@@ -336,8 +336,18 @@ pub(super) fn check_class_declaration(
                 // no-diagnostic case a `this` of legitimately unknown origin
                 // already gets (see the doc comment on Expression::ThisExpression
                 // in expressions/mod.rs), rather than being silently wrong.
+                // The class's own value type, when the symbol table has it, stands in for
+                // `this` here, so `this.missing` in a static method is TS2339 on the
+                // constructor type; with none recorded `this` stays unknown, as before.
+                let static_this = if method.r#static && method.value.this_param.is_none() {
+                    name.symbol_id.get().and_then(|id| ctx.symbols.get(id))
+                } else {
+                    None
+                };
                 let outer_class_instance_for_this = if method.r#static {
-                    ctx.current_class_instance.take()
+                    let outer = ctx.current_class_instance.take();
+                    ctx.current_class_instance = static_this;
+                    outer
                 } else {
                     ctx.current_class_instance
                 };
