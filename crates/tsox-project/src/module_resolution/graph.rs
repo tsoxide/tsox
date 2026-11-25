@@ -121,7 +121,7 @@ impl ModuleGraph {
         overlay: &(dyn Fn(&Path) -> Option<Arc<str>> + Sync),
     ) -> Result<Self, ModuleError> {
         // Discovery parses every file on the calling thread, and the parser recurses on
-        // nested syntax. It runs on the same 64 MB stack the checking workers have, so a
+        // nested syntax. It runs on the same 16 MB stack the checking workers have, so a
         // file this can parse is a file they can parse, and not on whatever stack the
         // caller happens to be on (8 MB for a main thread, 2 MB for a spawned one).
         let mut graph =

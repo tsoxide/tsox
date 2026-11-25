@@ -2137,7 +2137,7 @@ fn cycle_round_cap(members: usize) -> usize {
 // because that runs on the main thread, whose stack is about 8 MB. Rayon's
 // workers are spawned threads, and a spawned thread gets about 2 MB by default.
 // Picked: build the workers with a stack that is comfortably deeper than any file
-// we have seen, 64 MB. It is address space that is only touched where a file
+// we have seen, 16 MB. It is address space that is only touched where a file
 // really recurses deeply, so ordinary runs do not use more memory.
 // Cost: a chain several times longer than this one would still overflow. Fixing
 // that for good means a depth limit in the parser or an iterative walk, which is
