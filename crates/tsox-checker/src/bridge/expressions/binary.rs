@@ -197,6 +197,17 @@ fn literal_members(ctx: &CheckContext<'_, '_>, type_id: TypeId) -> Option<Vec<Ty
     }
 }
 
+// A type parameter's constraint, when it has one. tsc reads a constrained type parameter as its
+// constraint for the overlap check, so `T extends "a" | "b"` compared with `"x"` has no overlap.
+// An unconstrained type parameter is `unknown` to tsc, which is comparable to everything, so it
+// returns None and the caller leaves the comparison alone.
+fn constraint_of(ctx: &CheckContext<'_, '_>, type_id: TypeId) -> Option<TypeId> {
+    match ctx.arena.get(type_id) {
+        Type::GenericParameter(_, _, Some(bound)) => Some(*bound),
+        _ => None,
+    }
+}
+
 fn comparison_has_no_overlap(ctx: &CheckContext<'_, '_>, left: TypeId, right: TypeId) -> bool {
     // Two sets of literals with no member in common (`"a" | "b"` against `"c"`).
     if let (Some(left_members), Some(right_members)) =
@@ -207,6 +218,20 @@ fn comparison_has_no_overlap(ctx: &CheckContext<'_, '_>, left: TypeId, right: Ty
                 .iter()
                 .any(|r| ctx.arena.get(*l) == ctx.arena.get(*r))
         });
+    }
+    // A constrained type parameter reads as its constraint: `T extends "a" | "b"` against `"x"`
+    // is the same as `"a" | "b"` against `"x"`. Resolve both sides once and re-run the check.
+    let (left_resolved, right_resolved) =
+        match (constraint_of(ctx, left), constraint_of(ctx, right)) {
+            (Some(l), Some(r)) => (Some(l), Some(r)),
+            (Some(l), None) => (Some(l), Some(right)),
+            (None, Some(r)) => (Some(left), Some(r)),
+            (None, None) => (None, None),
+        };
+    if let (Some(l), Some(r)) = (left_resolved, right_resolved) {
+        if l != left || r != right {
+            return comparison_has_no_overlap(ctx, l, r);
+        }
     }
     #[derive(PartialEq, Clone, Copy)]
     enum Kind {
@@ -261,11 +286,27 @@ pub(super) fn infer_binary_expression_type(
         | BinaryOperator::StrictInequality => {
             if comparison_has_no_overlap(ctx, left, right) {
                 // tsc names the literals when both sides are literal types, and otherwise the
-                // primitives they belong to.
+                // primitives they belong to. A type parameter keeps its own name on its side
+                // (tsc reports `T` rather than its constraint's primitive), and the other side
+                // is shown as its literal when it is one (so `T` against `"x"` reads `'T' and
+                // '"x"'`, not `'T' and 'string'`).
                 let literal = |ctx: &CheckContext<'_, '_>, type_id: TypeId| {
                     literal_members(ctx, type_id).is_some()
                 };
-                let (shown_left, shown_right) = if literal(ctx, left) && literal(ctx, right) {
+                let is_generic = |ctx: &CheckContext<'_, '_>, type_id: TypeId| {
+                    matches!(ctx.arena.get(type_id), Type::GenericParameter(..))
+                };
+                let one_generic = is_generic(ctx, left) || is_generic(ctx, right);
+                let (shown_left, shown_right) = if one_generic {
+                    let show = |ctx: &CheckContext<'_, '_>, type_id: TypeId| {
+                        if literal(ctx, type_id) {
+                            type_id
+                        } else {
+                            crate::types::widen(&ctx.arena, type_id)
+                        }
+                    };
+                    (show(ctx, left), show(ctx, right))
+                } else if literal(ctx, left) && literal(ctx, right) {
                     (left, right)
                 } else {
                     (

@@ -783,6 +783,21 @@ impl<'a> TypeNamespace<'a> {
         self.entries.contains_key(&*self.canonical(name))
     }
 
+    /// True when something is declared under `prefix.` (a namespace `prefix` the program
+    /// writes, with at least one member). A dotted type name whose left part passes this but
+    /// which is itself not found names a member the namespace lacks.
+    pub fn declares_members_under(&self, prefix: &str) -> bool {
+        let dotted = format!("{prefix}.");
+        let scoped = self
+            .scope
+            .iter()
+            .map(|outer| format!("{outer}.{dotted}"))
+            .collect::<Vec<_>>();
+        self.entries
+            .keys()
+            .any(|key| key.starts_with(&dotted) || scoped.iter().any(|s| key.starts_with(s.as_str())))
+    }
+
     /// Enters `namespace N { ... }`: what is declared until `pop_scope` is `N.x`, and a
     /// name written inside is looked up as `N.name` before `name`.
     pub fn push_scope(&mut self, name: &str) {
@@ -2323,6 +2338,16 @@ impl<'a> TypeNamespace<'a> {
             }
         }
 
+        // A `#name` member is private to this class whatever keyword it carries, so it is
+        // not offered through a subclass or another class's structure.
+        for property in properties.iter_mut().filter(|p| p.name.starts_with('#')) {
+            property.modifiers = member_modifiers(
+                class,
+                self.file_id,
+                Some(oxc_ast::ast::TSAccessibility::Private),
+                property.modifiers.readonly,
+            );
+        }
         let own = arena.alloc(Type::Object(ObjectType::new(properties)));
         // `class C<T> extends Array<T>`: the instance is an array as well as what the class adds,
         // so it has the array's members and is assignable where an array is wanted.
@@ -2545,6 +2570,8 @@ fn static_member_name(key: &PropertyKey<'_>) -> Option<String> {
         PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
         PropertyKey::StringLiteral(lit) => Some(lit.value.to_string()),
         PropertyKey::NumericLiteral(lit) => Some(lit.value.to_string()),
+        // `#secret` is a member of its class under that name (tsc keeps the `#`), private to it.
+        PropertyKey::PrivateIdentifier(id) => Some(format!("#{}", id.name)),
         other => crate::type_annotation::well_known_symbol_key(other),
     }
 }

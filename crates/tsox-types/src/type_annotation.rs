@@ -419,6 +419,17 @@ pub fn resolve_ts_type(
                 }
             }
 
+            // `TypeScript.NodeType` where `namespace TypeScript` is written here but has no
+            // such member: the name is wrong, which tsc reports and then reads as an error
+            // type. Left unresolved, the one annotation made the whole class or function
+            // that holds it unmodelled, which hid every other error around it.
+            if let Some((left, _)) = id.name.rsplit_once('.')
+                && !namespace.contains(id.name)
+                && namespace.declares_members_under(left)
+            {
+                return Some(arena.error());
+            }
+
             resolve_named_reference(
                 id.name,
                 reference.type_arguments.as_deref(),

@@ -80,6 +80,7 @@ pub enum DiagnosticCode {
     TypeUsedAsValue,
     ImportTypeOnlyValue,
     ClassUsedBeforeDeclaration,
+    NamespaceNoExportedMember,
 
     // 1300s: destructuring
     ArrayDestructuringRequiresArray,
@@ -316,6 +317,7 @@ impl DiagnosticCode {
             TypeUsedAsValue => "TSR1206",
             ImportTypeOnlyValue => "TSR1217",
             ClassUsedBeforeDeclaration => "TSR1219",
+            NamespaceNoExportedMember => "TSR1220",
 
             ArrayDestructuringRequiresArray => "TSR1301",
 
@@ -548,6 +550,7 @@ impl DiagnosticCode {
             TypeUsedAsValue => 2693,
             ImportTypeOnlyValue => 1361,
             ClassUsedBeforeDeclaration => 2449,
+            NamespaceNoExportedMember => 2694,
 
             ArrayDestructuringRequiresArray => 2488,
 

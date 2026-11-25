@@ -379,7 +379,7 @@
 "compiler__commonjsAccessExports.ts": {"v":"MATCH","lines":[{"line":8,"result":"exact","tsox":["TS2304 Cannot find name 'exports'."],"tsc":["TS2304 Cannot find name 'exports'."]},{"line":9,"result":"exact","tsox":["TS2304 Cannot find name 'exports'."],"tsc":["TS2304 Cannot find name 'exports'."]},{"line":14,"result":"exact","tsox":["TS2304 Cannot find name 'exports'."],"tsc":["TS2304 Cannot find name 'exports'."]},{"line":19,"result":"exact","tsox":["TS2304 Cannot find name 'exports'."],"tsc":["TS2304 Cannot find name 'exports'."]}]},
 "compiler__comparabilityTypeParametersRelatedByUnion.ts": {"v":"MATCH","lines":[]},
 "compiler__comparableRelationBidirectional.ts": {"v":"MATCH","lines":[]},
-"compiler__compareTypeParameterConstrainedByLiteralToLiteral.ts": {"v":"GAP","lines":[{"line":6,"result":"gap","tsox":[],"tsc":["TS2367 This comparison appears to be unintentional because the types 'T' and '\"x\"' have no overlap."]}]},
+"compiler__compareTypeParameterConstrainedByLiteralToLiteral.ts": {"v":"MATCH","lines":[{"line":6,"result":"exact","tsox":["TS2367 This comparison appears to be unintentional because the types 'T' and '\"x\"' have no overlap."],"tsc":["TS2367 This comparison appears to be unintentional because the types 'T' and '\"x\"' have no overlap."]}]},
 "compiler__comparisonOfPartialDeepAndIndexedAccessTerminatesWithoutError.ts": {"v":"MATCH","lines":[]},
 "compiler__compilerOptionsDeclarationAndNoEmit.ts": {"v":"MATCH","lines":[]},
 "compiler__compilerOptionsOutAndNoEmit.ts": {"v":"MATCH","lines":[]},

@@ -4,6 +4,7 @@ use oxc_span::GetSpan;
 
 use super::super::context::CheckContext;
 use super::super::declare::{declare_function, resolve_function_type};
+use super::implicit_this_body::report_implicit_this_in_unchecked_body;
 use super::support::report_implicit_any_params;
 use super::{bind_params, check_statement};
 
@@ -61,6 +62,14 @@ fn check_function_declaration_inner(
     };
     let Some(declared) = declared else {
         tracing::trace!(name = %name.name, "function signature not fully annotated, body not checked");
+        // The body is skipped, but a `this` used in it is still TS2683 under noImplicitThis:
+        // tsc reports it even for a function whose signature it could not fully resolve. A
+        // `this:` parameter annotates `this`, so its type is known and the report is skipped.
+        if func.this_param.is_none()
+            && let Some(body) = &func.body
+        {
+            report_implicit_this_in_unchecked_body(&body.statements, ctx);
+        }
         return;
     };
     // A function that shares its name with a namespace is declared as the intersection of

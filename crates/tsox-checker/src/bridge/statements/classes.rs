@@ -529,17 +529,51 @@ fn report_uninitialized_properties(
     }
 }
 
-// An annotation that cannot be `undefined` however its parts resolve.
+// An annotation that cannot be `undefined` however its parts resolve. Used when the checker
+// cannot model the declared type itself: a property of such a type still gets TS2564, because
+// `undefined` is not assignable to it the same way it is not assignable to `number`.
 fn annotation_never_includes_undefined(annotation: &oxc_ast::ast::TSType<'_>) -> bool {
     use oxc_ast::ast::TSType;
     match annotation {
+        // A type that is structurally incapable of holding `undefined`.
         TSType::TSThisType(_)
         | TSType::TSArrayType(_)
         | TSType::TSTupleType(_)
-        | TSType::TSFunctionType(_) => true,
+        | TSType::TSFunctionType(_)
+        | TSType::TSConstructorType(_)
+        | TSType::TSTypeLiteral(_)
+        | TSType::TSObjectKeyword(_) => true,
+        // Keyword types that never include `undefined`. (`any`, `unknown`, `undefined` itself
+        // do, so they stay false; `null` does not, and `void`/`never` are not `undefined`.)
+        TSType::TSStringKeyword(_)
+        | TSType::TSNumberKeyword(_)
+        | TSType::TSBooleanKeyword(_)
+        | TSType::TSSymbolKeyword(_)
+        | TSType::TSBigIntKeyword(_)
+        | TSType::TSNullKeyword(_)
+        | TSType::TSVoidKeyword(_)
+        | TSType::TSNeverKeyword(_) => true,
         TSType::TSParenthesizedType(inner) => {
             annotation_never_includes_undefined(&inner.type_annotation)
         }
+        // A union includes `undefined` iff any member does, so it never does iff every member
+        // never does. `symbol | null` and `E.A | E.B` thus fire; `string | undefined` does not.
+        TSType::TSUnionType(union) => union
+            .types
+            .iter()
+            .all(annotation_never_includes_undefined),
+        // An intersection includes `undefined` iff every member does, so it never does iff any
+        // member never does. `A & B` where `A` is `number` thus fires.
+        TSType::TSIntersectionType(intersection) => intersection
+            .types
+            .iter()
+            .any(annotation_never_includes_undefined),
+        // A `TSTypeReference` (named type) is left unresolved: a resolvable nominal type such
+        // as `Map<...>` never includes `undefined`, but an unresolvable name (a missing import
+        // alias like `Internal.WhichThing`) is `any` to tsc and so does. This checker cannot
+        // tell the two apart without resolving the name, and resolving it is exactly what
+        // failed to land us here, so the reference is treated as possibly-undefined (false)
+        // to avoid false positives like the one on an unresolvable alias.
         _ => false,
     }
 }

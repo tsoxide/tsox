@@ -8,6 +8,7 @@ use super::expressions::{check_excess_properties, infer_expression_type, report_
 mod classes;
 mod control_flow;
 mod functions;
+mod implicit_this_body;
 mod patterns;
 mod support;
 mod variables;

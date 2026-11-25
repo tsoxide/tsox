@@ -39,6 +39,13 @@ pub(super) fn bind_imports<'ast>(
 ) {
     let Some(source) = ctx.imports else {
         report_standalone_imports(program, ctx);
+        // A standalone check has no project graph, so no `JSX.IntrinsicElements` is in
+        // scope unless the file itself declares one. tsc, checking the same file alone,
+        // reports TS7026 on intrinsic tags in that situation, so mirror it: set the flag
+        // the JSX element check reads, unless the file's own declarations provide it.
+        // `bind_project_globals` does this for the project path; standalone never reached
+        // it, so the flag stayed false and TS7026 was never emitted (1143 gap lines).
+        ctx.jsx_intrinsics_absent = !source_declares_jsx_intrinsics(program);
         return;
     };
     report_reference_directives(program.source_text, source, ctx);
@@ -569,6 +576,54 @@ fn report_reference_directives<'ast>(
         };
         ctx.error(message, span);
     }
+}
+
+// Whether the file itself brings a `JSX.IntrinsicElements` into scope, by declaring an
+// interface of that name either at the top level of a script or inside a `namespace JSX`.
+// A standalone file with such a declaration does not get TS7026 (the namespace is present),
+// matching tsc; without it, intrinsic tags are implicitly `any`. Walked structurally so a
+// mention in a comment or string does not suppress the diagnostic.
+fn source_declares_jsx_intrinsics(program: &Program<'_>) -> bool {
+    use super::declare::{TopLevelItem, namespace_members};
+    use oxc_ast::ast::Statement;
+
+    fn namespace_has_intrinsics(
+        ns: &oxc_ast::ast::TSNamespaceDeclaration<'_>,
+        depth: u8,
+    ) -> bool {
+        if depth > 8 {
+            return false;
+        }
+        for (item, _) in namespace_members(ns) {
+            match item {
+                TopLevelItem::Interface(d) if d.id.name == "IntrinsicElements" => return true,
+                TopLevelItem::Namespace(inner) => {
+                    if namespace_has_intrinsics(inner, depth + 1) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    for stmt in &program.body {
+        match stmt {
+            // `namespace JSX { interface IntrinsicElements { ... } }`
+            Statement::TSNamespaceDeclaration(ns) if ns.id.name == "JSX" => {
+                if namespace_has_intrinsics(ns, 0) {
+                    return true;
+                }
+            }
+            // A script file's own global `interface IntrinsicElements` (rare, but possible).
+            Statement::TSInterfaceDeclaration(d) if d.id.name == "IntrinsicElements" => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 // A file checked on its own (no project) has no other file to import from, so every

@@ -894,6 +894,13 @@ pub mod messages {
         )
     }
 
+    pub fn namespace_no_exported_member(namespace: &str, name: &str) -> DiagnosticMessage {
+        DiagnosticMessage::new(
+            DiagnosticCode::NamespaceNoExportedMember,
+            format!("Namespace '{namespace}' has no exported member '{name}'."),
+        )
+    }
+
     pub fn unresolved_identifier(name: &str) -> DiagnosticMessage {
         DiagnosticMessage::new(
             DiagnosticCode::UnresolvedIdentifier,
