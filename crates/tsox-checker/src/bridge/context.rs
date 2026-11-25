@@ -190,6 +190,10 @@ pub struct CheckContext<'ast, 'src> {
     // very next function expression checked is known to have no contextual
     // `this`, so its body should run with implicit_this set. Consumed on entry.
     pub next_function_has_no_this: bool,
+    // Set while a pattern is bound from a type the program wrote (an annotated parameter or
+    // declarator): only then is a default inside the pattern checked against the type of the
+    // name it supplies. A type inferred from an initializer is not one tsc holds a default to.
+    pub check_pattern_defaults: bool,
     // The type the call or `new` expression being checked is expected to produce, handed
     // from infer_expression_type to check_callable (which reads it before any argument is
     // inferred, since an argument's own call would overwrite it). Used as low-priority
@@ -612,6 +616,7 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             bracket_access: false,
             implicit_this: false,
             next_function_has_no_this: false,
+            check_pattern_defaults: false,
             call_return_context: None,
             contextual: None,
             const_context: false,

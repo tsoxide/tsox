@@ -483,7 +483,7 @@ fn narrow_member_on_assignment(
 // The type a write lands on. None for a target with no type to compare against
 // (destructuring, a type assertion), which skips the assignability check instead of
 // guessing; a wrong error is worse than a missing one.
-fn resolve_assignment_target_type(
+pub(crate) fn resolve_assignment_target_type(
     target: &AssignmentTarget,
     scoping: &Scoping,
     ctx: &mut CheckContext<'_, '_>,

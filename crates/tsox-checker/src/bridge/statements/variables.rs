@@ -39,7 +39,12 @@ pub(super) fn check_variable_declaration(
                 check_identifier_declarator(decl, declarator, id, scoping, ctx);
             }
             BindingPattern::ObjectPattern(_) | BindingPattern::ArrayPattern(_) => {
+                let outer = std::mem::replace(
+                    &mut ctx.check_pattern_defaults,
+                    declarator.type_annotation.is_some(),
+                );
                 check_destructured_declarator(decl.kind, declarator, scoping, ctx);
+                ctx.check_pattern_defaults = outer;
             }
 
             BindingPattern::AssignmentPattern(_) => {}

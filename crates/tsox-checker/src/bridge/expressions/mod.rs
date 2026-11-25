@@ -22,6 +22,7 @@ mod spelling;
 mod truthiness;
 
 pub(super) use assignment::narrow_on_assignment;
+pub(crate) use assignment::resolve_assignment_target_type;
 pub(super) use elaborate::report_mismatch;
 pub(super) use excess::check_excess_properties;
 pub(super) use members::infer_member_access_type;

@@ -374,6 +374,23 @@ pub(super) fn check_for_of_statement(
 ) {
     let iterable = infer_expression_type(&for_of.right, scoping, ctx);
     let element = for_of_element_type(iterable, ctx);
+    // `for (x of xs)` / `for (o.p of xs)` assigns each element to an existing target, so an
+    // element the target cannot hold is TS2322 on the target (tsc reports it at the left
+    // side). A declaration on the left is bound instead, and a destructuring target is
+    // left unchecked (`resolve_assignment_target_type` returns `None` for it).
+    if let Some(target) = for_of.left.as_assignment_target()
+        && let Some(target_type) =
+            super::super::expressions::resolve_assignment_target_type(target, scoping, ctx)
+        && target_type != ctx.arena.any()
+        && !ctx.is_assignable_instantiating(element, target_type)
+    {
+        let message = crate::diagnostic_messages::messages::declared_type_mismatch(
+            &ctx.arena,
+            element,
+            target_type,
+        );
+        ctx.error(message, target.span());
+    }
     check_for_each(
         for_of.span(),
         &for_of.left,
