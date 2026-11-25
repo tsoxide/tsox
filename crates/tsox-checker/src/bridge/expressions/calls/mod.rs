@@ -345,6 +345,28 @@ pub(super) fn infer_new_expression_type(
         return ctx.arena.alloc_promise(value);
     }
 
+    // Problem: a function with no construct signature (`var Inner = function () {}`, a plain
+    // `function F() {}`) used with `new` was typed as what it returns, `void`, so every member
+    // read on the result was reported missing.
+    // Picked: tsc's rule. The result is `any`, and under noImplicitAny the expression is
+    // TS7009. The arguments are still checked as expressions.
+    // Cost: a call whose function has a `this` type or is generic is treated the same; tsc
+    // resolves the signature first, which only changes which argument errors show.
+    if matches!(ctx.arena.get(callee_type), Type::Function(f) if !f.construct && !f.is_untyped) {
+        for argument in &new_expr.arguments {
+            if let Some(expression) = argument.as_expression() {
+                infer_expression_type(expression, scoping, ctx);
+            }
+        }
+        if ctx.option(crate::check_options::OptionField::NoImplicitAny) {
+            ctx.error(
+                crate::diagnostic_messages::messages::new_target_lacks_construct_signature(),
+                new_expr.span(),
+            );
+        }
+        return ctx.arena.any();
+    }
+
     // A mixin result: `Constructor<Tagged> & typeof Base` constructs the intersection of what
     // each constructor builds (tsc's mixin rule), not whatever the first signature builds.
     if let Type::Intersection(members) = ctx.arena.get(callee_type).clone() {

@@ -40,7 +40,7 @@
 "compiler__newArrays.ts": {"v":"MATCH","lines":[{"line":5,"result":"exact","tsox":["TS2564 Property 'fa' has no initializer and is not definitely assigned in the constructor."],"tsc":["TS2564 Property 'fa' has no initializer and is not definitely assigned in the constructor."]}]},
 "compiler__newExpressionWithCast.ts": {"v":"GAP","lines":[{"line":6,"result":"gap","tsox":[],"tsc":["TS7009 'new' expression, whose target lacks a construct signature, implicitly has an 'any' type."]},{"line":10,"result":"gap","tsox":[],"tsc":["TS2365 Operator '>' cannot be applied to types 'boolean' and 'void'.","TS1109 Expression expected.","TS2693 'any' only refers to a type, but is being used as a value here."]}]},
 "compiler__newExpressionWithTypeParameterConstrainedToOuterTypeParameter.ts": {"v":"MATCH","lines":[{"line":6,"result":"exact","tsox":["TS2454 Variable 'i' is used before being assigned."],"tsc":["TS2454 Variable 'i' is used before being assigned."]}]},
-"compiler__newFunctionImplicitAny.ts": {"v":"GAP","lines":[{"line":6,"result":"gap","tsox":[],"tsc":["TS7009 'new' expression, whose target lacks a construct signature, implicitly has an 'any' type."]}]},
+"compiler__newFunctionImplicitAny.ts": {"v":"MATCH","lines":[{"line":6,"result":"exact","tsox":["TS7009 'new' expression, whose target lacks a construct signature, implicitly has an 'any' type."],"tsc":["TS7009 'new' expression, whose target lacks a construct signature, implicitly has an 'any' type."]}]},
 "compiler__newLexicalEnvironmentForConvertedLoop.ts": {"v":"MATCH","lines":[]},
 "compiler__newLineFlagWithCRLF.ts": {"v":"MATCH","lines":[]},
 "compiler__newLineFlagWithLF.ts": {"v":"MATCH","lines":[]},
