@@ -85,11 +85,12 @@ fn assert_cut_once(name: &str, outcome: &Outcome) {
 
 // The three flat chains below are walked by oxc's semantic builder before the checker runs,
 // and in a debug build its frames are big enough (about 1.3 KB a level) that it overflows
-// the 16 MB stack at around 50,000 levels, before the guard has anything to say. So a debug
-// build is only held to the depth it can survive, and the cut is asserted in a release
+// the 16 MB stack between 12,000 and 16,000 levels with debug info on (CI's dev profile) and
+// at about 50,000 without it, past where the guard cuts (5,000 to 8,000). So a debug build is
+// only held to a depth it can survive, and the cut is asserted in a release
 // build, where the checker's own recursion is what runs out first.
 #[cfg(debug_assertions)]
-const FLAT_CHAIN: usize = 20_000;
+const FLAT_CHAIN: usize = 10_000;
 #[cfg(not(debug_assertions))]
 const FLAT_CHAIN: usize = 100_000;
 
@@ -130,7 +131,7 @@ fn a_very_long_optional_chain_is_cut_off_and_reported_once() {
 // compared with itself by assignment, which walks it again. The array suffix is parsed
 // without recursion, so this reaches the checker's own walk at a depth the parser allows.
 #[cfg(debug_assertions)]
-const DEEP_TYPE: usize = 20_000;
+const DEEP_TYPE: usize = 10_000;
 #[cfg(not(debug_assertions))]
 const DEEP_TYPE: usize = 1_000_000;
 
