@@ -16,7 +16,10 @@ pub fn bind_params(
     ctx: &mut CheckContext<'_, '_>,
 ) {
     for (param, declared) in params.items.iter().zip(param_types) {
-        let outer = std::mem::replace(&mut ctx.check_pattern_defaults, param.type_annotation.is_some());
+        let outer = std::mem::replace(
+            &mut ctx.check_pattern_defaults,
+            param.type_annotation.is_some(),
+        );
         bind_pattern(&param.pattern, declared.type_id, scoping, ctx);
         ctx.check_pattern_defaults = outer;
     }
