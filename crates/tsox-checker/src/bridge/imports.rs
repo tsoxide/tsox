@@ -231,6 +231,21 @@ fn bind_project_globals<'ast>(
         } else {
             bind_global_name(ctx, source, &name, &keys);
         }
+        // A namespace some of whose blocks were dropped is only partly known: an object of the
+        // blocks that did bind would report a member of a dropped block as missing (`Intl`
+        // without es5's constructors once es2016.intl is in the program). It reads as unknown.
+        if source.global_name_unmodelled(&name)
+            && !source.global_members(&name).is_empty()
+            && ctx.global_values.get(&name).is_some_and(|&value| {
+                matches!(
+                    ctx.arena.get(value),
+                    Type::Object(object) if object.string_index.is_none()
+                        && object.number_index.is_none()
+                )
+            })
+        {
+            ctx.global_values.remove(&name);
+        }
         // Part of the name was dropped. If it was the runtime side (`declare var Error:
         // ErrorConstructor`), the value exists but its type is not known, so a use reads as
         // unknown instead of as a type used as a value. A value that did bind is found first.
@@ -347,6 +362,9 @@ fn bind_global_value_name(
     let provider: &dyn DeclProvider = source;
     let mut value: Option<crate::arena::TypeId> = None;
     let mut functions: Vec<crate::arena::TypeId> = Vec::new();
+    // The value of each later block of a namespace written in several files, which the
+    // standard library does for `Intl` (es5 has the constructors, es2016.intl a function).
+    let mut blocks: Vec<crate::arena::TypeId> = Vec::new();
     for &key in keys {
         let Some(decl) = provider.decl(key) else {
             continue;
@@ -362,6 +380,8 @@ fn bind_global_value_name(
             DeclKind::Var => {
                 if value.is_none() {
                     value = ctx.importer.import_decl(&mut ctx.arena, provider, key);
+                } else if let Some(more) = ctx.importer.import_decl(&mut ctx.arena, provider, key) {
+                    blocks.push(more);
                 }
             }
             DeclKind::Enum => {
@@ -380,6 +400,11 @@ fn bind_global_value_name(
             DeclKind::Interface | DeclKind::Class | DeclKind::Alias | DeclKind::Namespace => {}
         }
     }
+    if let Some(first) = value
+        && !blocks.is_empty()
+    {
+        value = Some(merge_namespace_blocks(&mut ctx.arena, first, &blocks));
+    }
     let value = match (value, functions.len()) {
         (Some(value), _) => Some(value),
         (None, 0) => None,
@@ -392,6 +417,46 @@ fn bind_global_value_name(
     if let Some(value) = value {
         ctx.global_values.insert(name.to_string(), value);
     }
+}
+
+// Problem: a namespace written in several files was bound as the value of one file's block, so
+// a member written in another file was reported missing (`Intl.NumberFormat` once the program
+// also held es2016.intl's `Intl.getCanonicalLocales`). The keys come in no order that follows
+// the files, so which block won was arbitrary.
+// Picked: join the plain-object values of all the blocks into one object; where two list a
+// member the first one seen wins, which is the old behaviour for that member.
+// Cost: only plain objects are joined; a repeated `declare var` of another shape keeps the first
+// value, as before. Two real variables of one name are an error in tsc and are merged here too.
+fn merge_namespace_blocks(
+    arena: &mut crate::arena::TypeArena,
+    first: crate::arena::TypeId,
+    others: &[crate::arena::TypeId],
+) -> crate::arena::TypeId {
+    let plain = |arena: &crate::arena::TypeArena, id| match arena.get(id) {
+        Type::Object(object) if object.string_index.is_none() && object.number_index.is_none() => {
+            Some(object.properties.to_vec())
+        }
+        _ => None,
+    };
+    let Some(mut properties) = plain(arena, first) else {
+        return first;
+    };
+    let mut joined = false;
+    for &other in others {
+        let Some(more) = plain(arena, other) else {
+            continue;
+        };
+        for property in more {
+            if !properties.iter().any(|known| known.name == property.name) {
+                properties.push(property);
+                joined = true;
+            }
+        }
+    }
+    if !joined {
+        return first;
+    }
+    arena.alloc(Type::Object(ObjectType::new(properties)))
 }
 
 fn bind_global_namespace<'ast>(
