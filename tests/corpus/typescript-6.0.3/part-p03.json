@@ -274,7 +274,7 @@
 "compiler__isolatedModulesExportDeclarationType/test1.ts": {"v":"MATCH","lines":[]},
 "compiler__isolatedModulesExportDeclarationType/test2.ts": {"v":"MIXED","lines":[{"line":1,"result":"gap","tsox":[],"tsc":["TS2440 Import declaration conflicts with local declaration of 'T'."]},{"line":2,"result":"fp","tsox":["TS2567 Enum declarations can only merge with namespace or other enum declarations."],"tsc":[]},{"line":3,"result":"fp","tsox":["TS2693 'T' only refers to a type, but is being used as a value here."],"tsc":[]}]},
 "compiler__isolatedModulesExportDeclarationType/test3.ts": {"v":"FALSE POSITIVE","lines":[{"line":2,"result":"fp","tsox":["TS2693 'T' only refers to a type, but is being used as a value here."],"tsc":[]}]},
-"compiler__isolatedModulesExportDeclarationType/test4.ts": {"v":"FALSE POSITIVE","lines":[{"line":2,"result":"fp","tsox":["TS2307 Cannot find module './doesntexist' or its corresponding type declarations."],"tsc":[]}]},
+"compiler__isolatedModulesExportDeclarationType/test4.ts": {"v":"MATCH","lines":[]},
 "compiler__isolatedModulesExportDeclarationType/type.ts": {"v":"MATCH","lines":[]},
 "compiler__isolatedModulesExportImportUninstantiatedNamespace/factory.ts": {"v":"MATCH","lines":[]},
 "compiler__isolatedModulesExportImportUninstantiatedNamespace/jsx.ts": {"v":"MATCH","lines":[]},

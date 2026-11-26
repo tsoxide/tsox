@@ -60,10 +60,11 @@ the message function that builds it, and the code areas that call that function 
 | TSR1217 | `ImportTypeOnlyValue` | TS1361 | `import_type_only_value` | `tsox-checker/bridge/expressions` |
 | TSR1218 | `PropertyNeedsNewerLib` | TS2550 | `property_needs_newer_lib` | `tsox-checker/bridge/expressions` |
 | TSR1219 | `ClassUsedBeforeDeclaration` | TS2449 | `class_used_before_declaration` | `tsox-checker/bridge/use_before_declaration` |
+| TSR1220 | `NamespaceNoExportedMember` | TS2694 | `namespace_no_exported_member` | `tsox-checker/bridge/unresolved_names` |
 | TSR1301 | `ArrayDestructuringRequiresArray` | TS2488 | `array_destructuring_requires_array` | `tsox-checker/bridge/statements` |
 | TSR1401 | `ImplicitAnyParameter` | TS7006 | `parameter_implicitly_any` | `tsox-checker/bridge/implicit_any`, `tsox-checker/bridge/mod`, `tsox-checker/bridge/statements` |
 | TSR1402 | `ImplicitAnyElement` | TS7053 | `element_implicitly_any` | `tsox-checker/bridge/expressions` |
-| TSR1403 | `ImplicitAnyThis` | TS2683 | `this_implicitly_any` | `tsox-checker/bridge/expressions` |
+| TSR1403 | `ImplicitAnyThis` | TS2683 | `this_implicitly_any` | `tsox-checker/bridge/expressions`, `tsox-checker/bridge/statements` |
 | TSR1404 | `ImplicitAnyReturn` | TS7023 | `return_implicitly_any` | `tsox-checker/bridge/statements`, `tsox-project/module_resolution/check` |
 | TSR1405 | `ImplicitAnySetter` | TS7032 | `setter_property_implicitly_any` | `tsox-checker/bridge/statements` |
 | TSR1406 | `ImplicitAnyMember` | TS7008 | `member_implicitly_any` | `tsox-checker/bridge/implicit_any` |

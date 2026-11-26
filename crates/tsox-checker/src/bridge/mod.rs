@@ -1,6 +1,7 @@
 mod accessibility;
 mod ambient_checks;
 mod class_implements;
+mod comment_directives;
 mod context;
 mod declare;
 mod decorators;
@@ -226,6 +227,8 @@ pub fn check_file(
             diagnostic.end = map.to_original(diagnostic.end, true);
         }
     }
+
+    comment_directives::apply(&program, source, offsets.as_ref(), &mut diagnostics);
 
     // The parser's syntax errors come first, at the original source's offsets (the repairs
     // already put them there, so they skip the mapping above).
