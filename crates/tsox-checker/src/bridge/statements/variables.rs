@@ -169,10 +169,16 @@ fn check_identifier_declarator(
                     actual,
                     declared,
                     whole,
-                    declarator
-                        .init
-                        .as_ref()
-                        .map_or(declarator.span(), GetSpan::span),
+                    // tsc reports a declaration's mismatch on its name, so a multi-line
+                    // initializer does not move the error to the line it starts on. A literal
+                    // is the exception: tsc descends into its members, which sit in the literal.
+                    match &declarator.init {
+                        Some(
+                            init @ (Expression::ObjectExpression(_)
+                            | Expression::ArrayExpression(_)),
+                        ) => init.span(),
+                        _ => id.span,
+                    },
                     ctx,
                 );
             } else if let Some(init) = &declarator.init {

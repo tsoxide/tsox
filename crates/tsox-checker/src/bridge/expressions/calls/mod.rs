@@ -117,16 +117,51 @@ fn refine_by_type_guard(
     let Some(first) = call.arguments.first().and_then(|a| a.as_expression()) else {
         return result;
     };
+    // The element type a callback written in place is passed: `xs.filter(x => ...)` and
+    // `xs.find(x => ...)` give it `x`.
+    let element = match (method, ctx.arena.get(result).clone()) {
+        ("filter", Type::Array(element)) => Some(element),
+        ("find" | "findLast", Type::Union(members)) => {
+            let undefined = ctx.arena.undefined();
+            let rest: Vec<TypeId> = members
+                .iter()
+                .copied()
+                .filter(|&m| m != undefined)
+                .collect();
+            (rest.len() + 1 == members.len()).then(|| ctx.arena.alloc_union(rest))
+        }
+        _ => None,
+    };
     let claimed = match first {
         Expression::Identifier(ident) => resolve_symbol_id(ident, scoping)
             .and_then(|symbol| ctx.type_predicates.get(&symbol).copied())
             .filter(|p| !p.asserts && p.param_index == 0)
             .and_then(|p| p.type_id),
         Expression::ArrowFunctionExpression(arrow) => {
-            guard_type_of(arrow.return_type.as_deref(), &arrow.params, ctx)
+            guard_type_of(arrow.return_type.as_deref(), &arrow.params, ctx).or_else(|| {
+                crate::bridge::narrow::infer_inline_guard(
+                    &arrow.params,
+                    crate::bridge::narrow::arrow_returned(&arrow.body),
+                    arrow.return_type.is_some(),
+                    element?,
+                    scoping,
+                    ctx,
+                )
+            })
         }
         Expression::FunctionExpression(func) => {
-            guard_type_of(func.return_type.as_deref(), &func.params, ctx)
+            guard_type_of(func.return_type.as_deref(), &func.params, ctx).or_else(|| {
+                crate::bridge::narrow::infer_inline_guard(
+                    &func.params,
+                    func.body
+                        .as_deref()
+                        .and_then(crate::bridge::narrow::returned_expression),
+                    func.return_type.is_some(),
+                    element?,
+                    scoping,
+                    ctx,
+                )
+            })
         }
         _ => None,
     };

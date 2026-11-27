@@ -37,6 +37,10 @@ mod truthiness;
 pub use self::truthiness::*;
 mod predicate;
 pub use self::predicate::*;
+mod inferred_guards;
+pub use self::inferred_guards::{
+    arrow_returned, collect_inferred_guards, infer_inline_guard, returned_expression,
+};
 mod method_guards;
 use self::method_guards::method_guard_pair;
 pub use self::method_guards::{MethodGuard, collect_method_guards};

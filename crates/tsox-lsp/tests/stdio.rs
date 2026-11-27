@@ -284,9 +284,10 @@ fn an_error_in_an_opened_file_is_published_with_its_version() {
     assert_eq!(list[0]["source"], "tsox");
     assert_eq!(list[0]["severity"], 1);
     assert_eq!(list[0]["code"], "TS2322");
+    // tsc puts a declaration's mismatch on its name: `n`, column 13.
     assert_eq!(
         list[0]["range"]["start"],
-        json!({ "line": 0, "character": 25 })
+        json!({ "line": 0, "character": 13 })
     );
     assert!(client.shutdown().success());
 }
