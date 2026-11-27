@@ -333,6 +333,7 @@ fn bodies_phase<'ast>(
     } else {
         flow_shadow::FlowShadow::new(program, semantic).map(Box::new)
     };
+    narrow::collect_method_guards(program, ctx);
     statements::check_top_level(program, scoping, ctx);
     if let Some(shadow) = ctx.shadow.take() {
         shadow.report(ctx, scoping);

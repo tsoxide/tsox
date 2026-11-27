@@ -70,6 +70,13 @@ fn check_identifier_declarator(
         }
     };
 
+    if let Some(annotation) = &declarator.type_annotation
+        && let oxc_ast::ast::TSType::TSFunctionType(function) = &annotation.type_annotation
+        && let Some(symbol_id) = id.symbol_id.get()
+    {
+        crate::bridge::declare::record_function_type_predicate(function, symbol_id, ctx);
+    }
+
     // `const isString = typeof x === "string"` stands for its condition in a later `if (isString)`.
     if decl_kind == VariableDeclarationKind::Const
         && declarator.type_annotation.is_none()

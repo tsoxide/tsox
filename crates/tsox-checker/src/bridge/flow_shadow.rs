@@ -391,6 +391,7 @@ impl<'ast> FlowShadow<'ast> {
                 .type_predicates
                 .values()
                 .any(|predicate| predicate.asserts)
+            || ctx.method_guards.values().any(|guard| guard.asserts)
         {
             if ctx.destructured_index.contains_key(&symbol) {
                 self.stats.fallback.destructured += 1;

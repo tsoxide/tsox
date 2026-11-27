@@ -16,7 +16,7 @@ pub fn narrow_by_predicate_call(
     allow_asserts: bool,
 ) -> Option<(NarrowState, NarrowState)> {
     let Expression::Identifier(callee) = &call.callee else {
-        return None;
+        return method_guard_pair(call, scoping, ctx, allow_asserts);
     };
     let symbol_id = resolve_symbol_id(callee, scoping)?;
     let predicate = *ctx.type_predicates.get(&symbol_id)?;
