@@ -12,7 +12,8 @@ use super::super::context::CheckContext;
 use super::super::expressions::infer_expression_type;
 use super::super::narrow::{
     FrameKind, JumpFrame, NarrowState, join_states, narrow_condition, narrow_switch_case,
-    narrow_switch_default, resolve_symbol_id, switch_discriminant,
+    narrow_switch_default, resolve_symbol_id, switch_discriminant, switch_is_exhaustive,
+    without_repeated_tags,
 };
 use super::{
     bind_pattern, check_block_statements, check_statement, check_variable_declaration,
@@ -610,7 +611,7 @@ pub(super) fn check_switch_statement(
     scoping: &Scoping,
     ctx: &mut CheckContext<'_, '_>,
 ) {
-    infer_expression_type(&switch_stmt.discriminant, scoping, ctx);
+    let discriminant_type = infer_expression_type(&switch_stmt.discriminant, scoping, ctx);
 
     // `switch (kind)`, `switch (shape.kind)` and `switch (typeof x)` narrow the
     // discriminant's variable in each case body. Any other discriminant is
@@ -637,12 +638,15 @@ pub(super) fn check_switch_statement(
     // each such case is narrowed as if reached directly, matching tsc for the
     // usual break/return style (see statement_always_exits).
     let outer_narrow = ctx.narrow.clone();
+    let mut case_types: Vec<TypeId> = Vec::new();
     // A `break` in a case leaves the switch, so it must not be taken for one that leaves
     // an enclosing loop; the frame only exists to catch it, and what it collects is dropped
     // because the state after the switch is, as before, the one from before it.
     ctx.jump_frames
         .push(JumpFrame::new(None, FrameKind::Switch));
     let mut pending_tests: Vec<&Expression> = Vec::new();
+    // The labels of the cases already walked, for a `typeof` tag written twice.
+    let mut earlier_tests: Vec<&Expression> = Vec::new();
     let mut pending_default = false;
     let case_count = switch_stmt.cases.len();
     for (index, case) in switch_stmt.cases.iter().enumerate() {
@@ -650,7 +654,7 @@ pub(super) fn check_switch_statement(
         ctx.narrow = outer_narrow.clone();
         match &case.test {
             Some(test) => {
-                infer_expression_type(test, scoping, ctx);
+                case_types.push(infer_expression_type(test, scoping, ctx));
                 pending_tests.push(test);
             }
             None => pending_default = true,
@@ -663,13 +667,17 @@ pub(super) fn check_switch_statement(
             // A default grouped with other labels can be reached with any value,
             // so only a lone default or a set of plain case labels narrows.
             let overlay = match (pending_default, pending_tests.is_empty()) {
-                (false, false) => narrow_switch_case(discriminant, &pending_tests, scoping, ctx),
+                (false, false) => {
+                    let reached =
+                        without_repeated_tags(discriminant, &pending_tests, &earlier_tests);
+                    narrow_switch_case(discriminant, &reached, scoping, ctx)
+                }
                 (true, true) => narrow_switch_default(discriminant, &all_tests, scoping, ctx),
                 _ => NarrowState::new(),
             };
             ctx.narrow.extend(overlay);
         }
-        pending_tests.clear();
+        earlier_tests.append(&mut pending_tests);
         pending_default = false;
 
         for stmt in &case.consequent {
@@ -693,4 +701,16 @@ pub(super) fn check_switch_statement(
     }
     ctx.jump_frames.pop();
     ctx.narrow = outer_narrow;
+    // Cases that cover every value: the flow after the switch can then only come from a case.
+    if !switch_stmt.cases.iter().any(|case| case.test.is_none())
+        && switch_is_exhaustive(
+            discriminant.as_ref(),
+            discriminant_type,
+            &case_types,
+            &all_tests,
+            ctx,
+        )
+    {
+        ctx.exhaustive_switches.insert(switch_stmt.span.start);
+    }
 }

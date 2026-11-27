@@ -17,15 +17,40 @@ pub fn register_aliased_condition(
         if symbol_id == THIS_ROOT {
             return true;
         }
-        let flags = scoping.symbol_flags(symbol_id);
-        let reassignable = flags.is_block_scoped() && !flags.is_const_variable();
-        !reassignable && !scoping.symbol_is_mutated(symbol_id)
+        // tsc's `isConstantReference`: a `const`, or a parameter or `let` nothing assigns to.
+        !scoping.symbol_is_mutated(symbol_id)
     };
     on_true.retain_symbols(stable);
     on_false.retain_symbols(stable);
     if !on_true.is_empty() || !on_false.is_empty() {
         ctx.aliased_conditions.insert(alias, (on_true, on_false));
     }
+}
+
+/// `const kind = obj.kind;` and `const { kind } = obj;`: remembers that `kind` reads the property
+/// of `obj`, when `obj` is a reference nothing assigns to (tsc's `isConstantReference`).
+pub fn register_discriminant_alias(
+    alias: SymbolId,
+    object: &Expression,
+    property: &str,
+    scoping: &Scoping,
+    ctx: &mut CheckContext<'_, '_>,
+) {
+    let mut object = object;
+    while let Expression::ParenthesizedExpression(inner) = object {
+        object = &inner.expression;
+    }
+    let Expression::Identifier(root) = object else {
+        return;
+    };
+    let Some(root) = resolve_symbol_id(root, scoping) else {
+        return;
+    };
+    if scoping.symbol_is_mutated(root) || scoping.symbol_is_mutated(alias) {
+        return;
+    }
+    ctx.discriminant_aliases
+        .insert(alias, (root, property.to_string()));
 }
 
 pub fn narrow_condition(

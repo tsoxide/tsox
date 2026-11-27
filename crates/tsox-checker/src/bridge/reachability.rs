@@ -35,9 +35,11 @@
 // read of one is an error also depends on its declared type (`number | undefined` is fine),
 // which only the checker knows, so this module records the reads and the checker decides.
 //
-// Not covered, because they need types: a call to a function that returns `never`, an
-// `asserts false` call, a `switch` that exhausts its discriminant, and a condition that narrows
-// a variable by anything but the forms listed in `removes_undefined`.
+// Needs types, so the checker tells this module: a `switch` that exhausts its discriminant
+// (`analyze_exhausting`). A call statement to a name declared `: never` is found from the
+// annotation alone (`never_functions`); a method such as `this.fail()` or `Debug.fail()` is not.
+// Not covered: an `asserts false` call, and a condition that narrows a variable by anything but
+// the forms listed in `removes_undefined`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -212,13 +214,29 @@ pub fn analyze(program: &Program<'_>, scoping: &Scoping) -> Reachability {
 // `forced_module` is `moduleDetection: "force"`: a file with no import or export is still a module,
 // so a `let` at its top is local to it, not a global.
 pub fn analyze_as(program: &Program<'_>, scoping: &Scoping, forced_module: bool) -> Reachability {
+    analyze_exhausting(program, scoping, forced_module, &HashSet::new())
+}
+
+// The same walk, told which `switch` statements (by the start offset of the statement) have
+// cases that cover their discriminant. Past such a switch, with no `default`, the flow can only
+// arrive from a case, which is what tsc's `isExhaustiveSwitchStatement` gives its binder's
+// graph: a function whose every case returns does not run off its end.
+pub fn analyze_exhausting(
+    program: &Program<'_>,
+    scoping: &Scoping,
+    forced_module: bool,
+    exhausted: &HashSet<u32>,
+) -> Reachability {
     // Two walks. The first only learns which variables are tracked and which function each
     // lives in, so that a read that comes before its declaration (a hoisted `var`) is known to
     // be of a tracked variable. Its other results are thrown away.
     let mut discover = Analyzer::new(scoping, HashMap::new(), HashMap::new(), HashSet::new());
+    discover.exhausted = exhausted.clone();
     discover.is_script = program.source_type.is_script() && !forced_module;
     let predicates = predicate_functions(program);
     discover.predicates = predicates.clone();
+    let never_functions = never_functions(program);
+    discover.never_functions = never_functions.clone();
     let mut namespaces = NamespaceMembers::new();
     collect_namespaces(&program.body, &mut namespaces);
     discover.namespaces = namespaces.clone();
@@ -229,8 +247,10 @@ pub fn analyze_as(program: &Program<'_>, scoping: &Scoping, forced_module: bool)
         discover.last_assignment,
         discover.definite,
     );
+    analyzer.exhausted = exhausted.clone();
     analyzer.is_script = program.source_type.is_script() && !forced_module;
     analyzer.predicates = predicates;
+    analyzer.never_functions = never_functions;
     analyzer.namespaces = namespaces;
     analyzer.discovering = false;
     analyzer.visit_program(program);
@@ -278,6 +298,67 @@ fn predicate_functions(program: &Program<'_>) -> HashSet<SymbolId> {
                 }
             }
             walk::walk_variable_declarator(self, declarator);
+        }
+    }
+    let mut scan = Scan(HashSet::new());
+    scan.visit_program(program);
+    scan.0
+}
+
+// The names that are declared to return `never` and so end the flow when called as a statement:
+// `function f(): never`, and a variable or parameter annotated `(..) => never`. An unannotated
+// arrow that happens to return `never` is not one, as in tsc.
+fn never_functions(program: &Program<'_>) -> HashSet<SymbolId> {
+    use oxc_ast::ast::TSType;
+    struct Scan(HashSet<SymbolId>);
+    fn never_return(
+        annotation: &Option<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeAnnotation<'_>>>,
+    ) -> bool {
+        annotation.as_ref().is_some_and(|annotation| {
+            matches!(annotation.type_annotation, TSType::TSNeverKeyword(_))
+        })
+    }
+    fn never_function_type(
+        annotation: &Option<oxc_allocator::Box<'_, oxc_ast::ast::TSTypeAnnotation<'_>>>,
+    ) -> bool {
+        annotation.as_ref().is_some_and(|annotation| {
+            matches!(
+                &annotation.type_annotation,
+                TSType::TSFunctionType(function)
+                    if matches!(function.return_type.type_annotation, TSType::TSNeverKeyword(_))
+            )
+        })
+    }
+    impl<'a> Visit<'a> for Scan {
+        fn visit_function(
+            &mut self,
+            function: &oxc_ast::ast::Function<'a>,
+            flags: oxc_semantic::ScopeFlags,
+        ) {
+            if never_return(&function.return_type)
+                && let Some(id) = function.id.as_ref().and_then(|id| id.symbol_id.get())
+            {
+                self.0.insert(id);
+            }
+            walk::walk_function(self, function, flags);
+        }
+        fn visit_variable_declarator(&mut self, declarator: &oxc_ast::ast::VariableDeclarator<'a>) {
+            if let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = &declarator.id
+                && never_function_type(&declarator.type_annotation)
+                && let Some(symbol) = id.symbol_id.get()
+            {
+                self.0.insert(symbol);
+            }
+            walk::walk_variable_declarator(self, declarator);
+        }
+        fn visit_formal_parameter(&mut self, parameter: &oxc_ast::ast::FormalParameter<'a>) {
+            if let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = &parameter.pattern
+                && never_function_type(&parameter.type_annotation)
+                && let Some(symbol) = id.symbol_id.get()
+            {
+                self.0.insert(symbol);
+            }
+            walk::walk_formal_parameter(self, parameter);
         }
     }
     let mut scan = Scan(HashSet::new());
@@ -464,6 +545,10 @@ struct Analyzer<'s> {
     // The nearest function around the point being walked, numbered as they are entered.
     function: usize,
     functions: usize,
+    // The `switch` statements, by start offset, whose cases cover every value of the
+    // discriminant. Only the checker knows (it needs types), so it hands them in after the
+    // bodies are checked; the flow then has no way past such a switch except through a case.
+    exhausted: HashSet<u32>,
     // Learning which variables are tracked (first walk), or reporting (second).
     discovering: bool,
     tracked: HashMap<SymbolId, Tracked>,
@@ -495,6 +580,7 @@ struct Analyzer<'s> {
     // Functions declared with a type predicate (`x is T`) as their return type, which narrow
     // their argument where a call to one is a condition.
     predicates: HashSet<SymbolId>,
+    never_functions: HashSet<SymbolId>,
     namespaces: NamespaceMembers,
     out: Reachability,
 }
@@ -509,6 +595,7 @@ impl<'s> Analyzer<'s> {
         Self {
             scoping,
             predicates: HashSet::new(),
+            never_functions: HashSet::new(),
             namespaces: HashMap::new(),
             st: St::live(),
             within: false,
@@ -525,6 +612,7 @@ impl<'s> Analyzer<'s> {
             containers: 0,
             function: 0,
             functions: 0,
+            exhausted: HashSet::new(),
             discovering: true,
             tracked,
             declaration: None,
@@ -1691,11 +1779,43 @@ impl<'a, 's> Visit<'a> for Analyzer<'s> {
                 walk::walk_statement(self, statement);
                 self.in_export = saved;
             }
+            Statement::ExpressionStatement(expression)
+                if self.is_never_call(&expression.expression) =>
+            {
+                // A call to a function declared to return `never` (tsc's never-returning call
+                // flow node): what follows it is not reached.
+                walk::walk_statement(self, statement);
+                self.st = St::dead();
+            }
             other => walk::walk_statement(self, other),
         }
         if extends_assignment {
             self.statements.pop();
         }
+    }
+}
+
+impl<'a, 's> Analyzer<'s> {
+    // `fail();` where `fail` is declared to return `never` (a call through parentheses counts;
+    // an optional call does not).
+    fn is_never_call(&self, expression: &Expression<'a>) -> bool {
+        if self.never_functions.is_empty() {
+            return false;
+        }
+        let Expression::CallExpression(call) = skip_parens(expression) else {
+            return false;
+        };
+        if call.optional {
+            return false;
+        }
+        let Expression::Identifier(callee) = skip_parens(&call.callee) else {
+            return false;
+        };
+        callee
+            .reference_id
+            .get()
+            .and_then(|reference| self.scoping.get_reference(reference).symbol_id())
+            .is_some_and(|symbol| self.never_functions.contains(&symbol))
     }
 }
 
@@ -1790,7 +1910,9 @@ impl<'a, 's> Analyzer<'s> {
         }
         self.st = end;
         self.arrive(post);
-        if !statement.cases.iter().any(|case| case.test.is_none()) {
+        if !statement.cases.iter().any(|case| case.test.is_none())
+            && !self.exhausted.contains(&statement.span.start)
+        {
             self.st = top;
             self.arrive(post);
         }

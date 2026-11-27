@@ -1,6 +1,7 @@
 mod accessibility;
 mod ambient_checks;
 mod class_implements;
+mod comment_directives;
 mod context;
 mod declare;
 mod decorators;
@@ -227,6 +228,8 @@ pub fn check_file(
         }
     }
 
+    comment_directives::apply(&program, source, offsets.as_ref(), &mut diagnostics);
+
     // The parser's syntax errors come first, at the original source's offsets (the repairs
     // already put them there, so they skip the mapping above).
     diagnostics.splice(
@@ -330,6 +333,7 @@ fn bodies_phase<'ast>(
     } else {
         flow_shadow::FlowShadow::new(program, semantic).map(Box::new)
     };
+    narrow::collect_method_guards(program, ctx);
     statements::check_top_level(program, scoping, ctx);
     if let Some(shadow) = ctx.shadow.take() {
         shadow.report(ctx, scoping);

@@ -112,6 +112,48 @@ pub(in crate::bridge) fn record_type_predicate(
     );
 }
 
+// `const assert: (value: unknown) => asserts value = ...` and `let isFoo: (x: unknown) => x is Foo`:
+// the predicate of a variable annotated with a function type, for the narrowing its calls do. A
+// generic signature is left alone, as its claimed type would name the signature's own parameters.
+pub(in crate::bridge) fn record_function_type_predicate(
+    function: &oxc_ast::ast::TSFunctionType<'_>,
+    symbol_id: oxc_semantic::SymbolId,
+    ctx: &mut CheckContext<'_, '_>,
+) {
+    use oxc_ast::ast::{TSType, TSTypePredicateName};
+    if function.type_parameters.is_some() {
+        return;
+    }
+    let TSType::TSTypePredicate(predicate) = &function.return_type.type_annotation else {
+        return;
+    };
+    let TSTypePredicateName::Identifier(name) = &predicate.parameter_name else {
+        return;
+    };
+    let Some(param_index) = function.params.items.iter().position(|param| {
+        matches!(&param.pattern, oxc_ast::ast::BindingPattern::BindingIdentifier(id) if id.name == name.name)
+    }) else {
+        return;
+    };
+    let type_id = match &predicate.type_annotation {
+        Some(annotation) => {
+            match resolve_type_annotation(annotation, &mut ctx.namespace, &mut ctx.arena) {
+                Some(resolved) => Some(resolved),
+                None => return,
+            }
+        }
+        None => None,
+    };
+    ctx.type_predicates.insert(
+        symbol_id,
+        super::super::context::TypePredicate {
+            param_index,
+            type_id,
+            asserts: predicate.asserts,
+        },
+    );
+}
+
 pub(in crate::bridge) fn resolve_overload_params_lenient(
     params: &oxc_ast::ast::FormalParameters<'_>,
     ctx: &mut CheckContext<'_, '_>,

@@ -912,7 +912,14 @@ pub(super) fn infer_computed_member_access_type(
         // (like tsc under noUncheckedIndexedAccess) does not track array
         // lengths. `arr[0]` and `arr[i]` are both indexing past the end of a
         // real array at runtime if the array turns out to be empty.
-        if !ctx.option(crate::check_options::OptionField::NoUncheckedIndexedAccess) {
+        // `any`, `unknown` and an error type absorb `undefined` in a union, so an element of
+        // one of those stays as it is: `comments[i].x` on a `Missing[]` is not "possibly
+        // undefined".
+        let absorbs_undefined =
+            [ctx.arena.any(), ctx.arena.unknown(), ctx.arena.error()].contains(&element_type);
+        if absorbs_undefined
+            || !ctx.option(crate::check_options::OptionField::NoUncheckedIndexedAccess)
+        {
             return element_type;
         }
         return ctx

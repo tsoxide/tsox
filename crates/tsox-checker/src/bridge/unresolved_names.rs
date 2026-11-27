@@ -10,6 +10,7 @@ use oxc_semantic::Scoping;
 
 use crate::lib_global_types::is_lib_global_type;
 use crate::namespace::TypeNamespace;
+use crate::types::Type;
 
 use super::context::CheckContext;
 use super::narrow::resolve_symbol_id;
@@ -41,6 +42,7 @@ pub fn report_unresolved_type_names<'ast>(
         in_class_initializer: 0,
         class_frames: Vec::new(),
         member_function_pending: false,
+        ambient_module_depth: 0,
     };
     walker.visit_program(program);
 }
@@ -76,6 +78,9 @@ struct Walker<'s, 'c, 'ast, 'src> {
     class_frames: Vec<ClassFrame>,
     // The next function visited is the body of the class member being entered, not a nested one.
     member_function_pending: bool,
+    // Inside `declare module "m" { ... }`, where a namespace named like an outer one is the
+    // module's own, which this walker does not model; TS2694 is not judged there.
+    ambient_module_depth: u32,
 }
 
 // What a class declares by name, and where in it the walk is. `in_member` is set inside a
@@ -265,6 +270,58 @@ impl Walker<'_, '_, '_, '_> {
                 id,
             );
         }
+        self.check_namespace_member(name);
+    }
+
+    // `TypeScript.NodeType` where `namespace TypeScript` is declared here and has no such
+    // member (TS2694). Only a one-identifier namespace head is judged, and only when the
+    // namespace's value shape lacks the name as well, so a value-only member used as a type
+    // (a different error) is left alone.
+    fn check_namespace_member(&mut self, name: &TSTypeName) {
+        if self.ambient_module_depth > 0 {
+            return;
+        }
+        let TSTypeName::QualifiedName(qualified) = name else {
+            return;
+        };
+        let TSTypeName::IdentifierReference(head) = &qualified.left else {
+            return;
+        };
+        let full = format!("{}.{}", head.name, qualified.right.name);
+        if self.ctx.namespace.contains(&full)
+            || !self.ctx.namespace.declares_members_under(&head.name)
+        {
+            return;
+        }
+        let Some(symbol_id) = resolve_symbol_id(head, self.scoping) else {
+            return;
+        };
+        let Some(shape) = self.ctx.symbols.get(symbol_id) else {
+            return;
+        };
+        let Type::Object(object) = self.ctx.arena.get(shape).clone() else {
+            return;
+        };
+        if object
+            .properties
+            .iter()
+            .any(|p| p.name.as_ref() == qualified.right.name.as_str())
+        {
+            return;
+        }
+        let span = qualified.right.span;
+        let message = crate::diagnostic_messages::messages::namespace_no_exported_member(
+            &head.name,
+            &qualified.right.name,
+        );
+        let already = self
+            .ctx
+            .diagnostics
+            .iter()
+            .any(|d| d.start == span.start && d.code == message.code);
+        if !already {
+            self.ctx.error(message, span);
+        }
     }
 }
 
@@ -278,6 +335,15 @@ impl<'a> Visit<'a> for Walker<'_, '_, '_, '_> {
     // which finds what any block of `A` declared, and a dotted `namespace A.B` enters A
     // and then B.
     // Cost: none beyond a push and a pop per namespace.
+    fn visit_ts_external_module_declaration(
+        &mut self,
+        it: &oxc_ast::ast::TSExternalModuleDeclaration<'a>,
+    ) {
+        self.ambient_module_depth += 1;
+        walk::walk_ts_external_module_declaration(self, it);
+        self.ambient_module_depth -= 1;
+    }
+
     fn visit_ts_namespace_declaration(&mut self, it: &TSNamespaceDeclaration<'a>) {
         self.ctx.namespace.push_scope(&it.id.name);
         walk::walk_ts_namespace_declaration(self, it);

@@ -562,19 +562,27 @@ fn widen_if_narrowed(
 }
 
 // TS7026 on each intrinsic (lowercase) tag of `element` and of the elements nested in it, when
-// the project is known to declare no `JSX.IntrinsicElements`. A file that mentions `JSX`, imports
-// something (which may bring the namespace) or names a JSX pragma is left alone: its namespace
-// may come from where this checker does not look.
+// no `JSX.IntrinsicElements` is in scope. `ctx.jsx_intrinsics_absent` is the authority for that
+// (set from the project's globals, or, in a standalone check, true unless the file declares the
+// interface itself — see `bind_imports`). The remaining guards step aside for the cases tsc also
+// steps aside for, even when the namespace is otherwise absent:
+//   - a `/// <reference path="...react...">` directive (the referenced library supplies it);
+//   - a `@jsx` / `@jsxFrag` / `@jsxImportSource` pragma, in a line or block comment (the file's
+//     own factory configuration supplies it).
+// The earlier broad `JSX` / `import ` / `require(` text guards are dropped: in a standalone check
+// none of those loads a library, so they suppressed every TS7026 (1143 gap lines) without matching
+// tsc. A handful of multi-file cases that `import React` and resolve it through the module graph
+// still report TS7026 here when the graph did not register `JSX.IntrinsicElements` as a global;
+// those are a known imperfection, not a correctness regression, and tsc's own answer depends on
+// the same resolution this checker has not yet completed for them.
 fn report_jsx_without_intrinsics(
     element: &oxc_ast::ast::JSXElement,
     ctx: &mut CheckContext<'_, '_>,
 ) {
     use oxc_ast::ast::{JSXChild, JSXElementName};
     if !ctx.jsx_intrinsics_absent
-        || ctx.source_text.contains("JSX")
-        || ctx.source_text.contains("@jsx")
-        || ctx.source_text.contains("import ")
-        || ctx.source_text.contains("require(")
+        || references_react_lib(ctx.source_text)
+        || has_jsx_factory_pragma(ctx.source_text)
     {
         return;
     }
@@ -595,4 +603,29 @@ fn report_jsx_without_intrinsics(
             report_jsx_without_intrinsics(child, ctx);
         }
     }
+}
+
+// A `/// <reference path="...react...">` triple-slash directive: the referenced library (react,
+// react16, react18, preact, ...) declares `JSX.IntrinsicElements`, so an intrinsic tag is not
+// implicitly `any`. Scanned over the file's leading comment header the way the project path's
+// `report_reference_directives` scans directives; the path is matched case-insensitively so both
+// `React.d.ts` and `react18.d.ts` are recognized.
+fn references_react_lib(source: &str) -> bool {
+    source.lines().take(40).any(|line| {
+        let line = line.trim_start();
+        line.starts_with("///")
+            && line.contains("<reference")
+            && line.contains("path=")
+            && line.to_ascii_lowercase().contains("react")
+    })
+}
+
+// A `@jsx`, `@jsxFrag` or `@jsxImportSource` pragma anywhere in the file's option header, whether
+// it sits in a line comment (`// @jsx h`) or a block comment (`/** @jsx h */`). The file picks its
+// own JSX factory, and the compiler configuration that goes with it supplies `IntrinsicElements`,
+// so tsc does not report TS7026.
+fn has_jsx_factory_pragma(source: &str) -> bool {
+    source.lines().take(40).any(|line| {
+        line.contains("@jsx") || line.contains("@jsxFrag") || line.contains("@jsxImportSource")
+    })
 }

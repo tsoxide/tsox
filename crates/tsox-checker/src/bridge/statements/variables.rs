@@ -70,6 +70,13 @@ fn check_identifier_declarator(
         }
     };
 
+    if let Some(annotation) = &declarator.type_annotation
+        && let oxc_ast::ast::TSType::TSFunctionType(function) = &annotation.type_annotation
+        && let Some(symbol_id) = id.symbol_id.get()
+    {
+        crate::bridge::declare::record_function_type_predicate(function, symbol_id, ctx);
+    }
+
     // `const isString = typeof x === "string"` stands for its condition in a later `if (isString)`.
     if decl_kind == VariableDeclarationKind::Const
         && declarator.type_annotation.is_none()
@@ -77,6 +84,20 @@ fn check_identifier_declarator(
         && let Some(init) = &declarator.init
     {
         crate::bridge::narrow::register_aliased_condition(symbol_id, init, scoping, ctx);
+    }
+    if decl_kind == VariableDeclarationKind::Const
+        && declarator.type_annotation.is_none()
+        && let Some(symbol_id) = id.symbol_id.get()
+        && let Some(Expression::StaticMemberExpression(member)) = &declarator.init
+        && !member.optional
+    {
+        crate::bridge::narrow::register_discriminant_alias(
+            symbol_id,
+            &member.object,
+            member.property.name.as_str(),
+            scoping,
+            ctx,
+        );
     }
 
     // With no annotation on the variable there is no contextual type for the
@@ -192,6 +213,33 @@ fn check_identifier_declarator(
                 crate::types::widen(&ctx.arena, actual)
             };
             let registered_type = evolve_empty_array(registered_type, ctx);
+            // `var x = 1; var x = () => {};` — tsc reports TS2403 here too: a later `var`
+            // must repeat the first one's type, whether or not either was annotated. The
+            // widened inferred type stands in for the absent annotation, so the same check
+            // the annotated arms run applies. (`const`/`let` redeclare in a nested scope and
+            // never reach this path as the same symbol.)
+            //
+            // Two guards keep this from over-reporting where tsc calls the types the same:
+            //  - A call or `new` initializer is left out: tsc reads a `var r = f(a)` whose `f`
+            //    is overloaded as the union of every overload's return, while this checker
+            //    picks one overload per call site, so the inferred type varies between
+            //    redeclarations that tsc calls identical.
+            //  - A first declaration whose type is a literal or a union of literals (e.g.
+            //    `var x: true | false`) is left out: tsc treats `true | false` as equivalent
+            //    to `boolean`, so a later `var x = true` (widened to `boolean`) is not a
+            //    mismatch, while this checker's mutual-assignability sees them as different.
+            let init_is_call = matches!(
+                declarator.init.as_ref(),
+                Some(Expression::CallExpression(_) | Expression::NewExpression(_))
+            );
+            let first_is_literal_union = id
+                .symbol_id
+                .get()
+                .and_then(|sid| ctx.var_annotations.get(&sid).copied())
+                .is_some_and(|first| literal_or_literal_union(&ctx.arena, first));
+            if !init_is_call && !first_is_literal_union {
+                note_var_redeclaration(decl_kind, id, registered_type, ctx);
+            }
             if let Some(symbol_id) = id.symbol_id.get() {
                 declare_variable(symbol_id, &id.name, registered_type, scoping, ctx);
             }
@@ -221,6 +269,23 @@ fn check_identifier_declarator(
 // `var i: number; var i: string;` — later declarations of a `var` must repeat the first
 // one's type (TS2403). Only annotated declarations are compared, and by mutual assignability,
 // so a difference tsc would call identical is never reported.
+
+// Whether a type is a single literal or a union whose members are all literals. tsc treats
+// `true | false` as equivalent to `boolean` for the TS2403 check, so a first declaration with
+// such a type is left to the annotated path rather than compared against a widened primitive.
+fn literal_or_literal_union(arena: &crate::arena::TypeArena, type_id: TypeId) -> bool {
+    let is_literal = |id: TypeId| {
+        matches!(
+            arena.get(id),
+            Type::StringLiteral(_) | Type::NumberLiteral(_) | Type::BooleanLiteral(_)
+        )
+    };
+    match arena.get(type_id) {
+        Type::Union(members) => members.iter().all(|&m| is_literal(m)),
+        _ => is_literal(type_id),
+    }
+}
+
 fn note_var_redeclaration(
     decl_kind: VariableDeclarationKind,
     id: &oxc_ast::ast::BindingIdentifier,
@@ -264,6 +329,22 @@ fn check_destructured_declarator(
     scoping: &Scoping,
     ctx: &mut CheckContext<'_, '_>,
 ) {
+    if decl_kind == VariableDeclarationKind::Const
+        && declarator.type_annotation.is_none()
+        && let BindingPattern::ObjectPattern(pattern) = &declarator.id
+        && let Some(init) = &declarator.init
+    {
+        for property in &pattern.properties {
+            if let (Some(name), BindingPattern::BindingIdentifier(local)) =
+                (property.key.static_name(), &property.value)
+                && let Some(symbol_id) = local.symbol_id.get()
+            {
+                crate::bridge::narrow::register_discriminant_alias(
+                    symbol_id, init, &name, scoping, ctx,
+                );
+            }
+        }
+    }
     let annotation_outcome = match &declarator.type_annotation {
         None => AnnotationOutcome::Absent,
         Some(annotation) => {

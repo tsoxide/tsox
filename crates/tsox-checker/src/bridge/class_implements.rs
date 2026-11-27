@@ -213,6 +213,40 @@ fn member_span(class: &Class<'_>, name: &str) -> Option<oxc_span::Span> {
     })
 }
 
+// A `#name` member belongs to the class that declares it, so a subclass may declare its own
+// `#name` with another type (or none) without conflicting with the base. The relation between
+// a class and its base is judged on the remaining members. An instance with no `#` member is
+// returned as it is.
+fn without_private_names(
+    ctx: &mut CheckContext<'_, '_>,
+    id: crate::arena::TypeId,
+) -> crate::arena::TypeId {
+    use crate::types::{ObjectType, Type};
+    match ctx.arena.get(id).clone() {
+        Type::Object(object) if object.properties.iter().any(|p| p.name.starts_with('#')) => {
+            let kept = object
+                .properties
+                .iter()
+                .filter(|p| !p.name.starts_with('#'))
+                .cloned()
+                .collect::<Vec<_>>();
+            ctx.arena.alloc(Type::Object(ObjectType::new(kept)))
+        }
+        Type::Intersection(members) => {
+            let stripped = members
+                .iter()
+                .map(|&m| without_private_names(ctx, m))
+                .collect::<Vec<_>>();
+            if stripped == members {
+                id
+            } else {
+                ctx.arena.alloc_intersection(stripped).unwrap_or(id)
+            }
+        }
+        _ => id,
+    }
+}
+
 // `class D extends B`: D's instance must be assignable to B's. A property both declare with
 // conflicting types is reported at D's own member (TS2416); any other mismatch at the class
 // name (TS2415).
@@ -240,12 +274,16 @@ fn check_extends<'ast>(
     if ctx.option(crate::check_options::OptionField::NoImplicitOverride) {
         report_missing_overrides(class, &base_name.name, base, ctx);
     }
-    if crate::subtyping::is_subtype(&ctx.arena, instance, base) {
+    let (instance, base_for_check) = (
+        without_private_names(ctx, instance),
+        without_private_names(ctx, base),
+    );
+    if crate::subtyping::is_subtype(&ctx.arena, instance, base_for_check) {
         return;
     }
     // Only a property both sides declare with conflicting types is reported; a base the
     // namespace models only partly must not turn into an invented mismatch.
-    let Some((property, true)) = first_incompatible_property(ctx, instance, base) else {
+    let Some((property, true)) = first_incompatible_property(ctx, instance, base_for_check) else {
         return;
     };
     match member_span(class, &property) {

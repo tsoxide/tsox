@@ -65,7 +65,13 @@ pub(super) fn narrow_by_typeof(
             kept.push(member);
         } else if is_unknown {
             if want_match {
-                kept.push(primitive_for_tag(arena, tag).unwrap_or(member));
+                if tag == "object" {
+                    // `typeof null` is "object" too: an unknown that is an object is `object | null`.
+                    kept.push(arena.alloc(Type::NonPrimitive));
+                    kept.push(arena.null());
+                } else {
+                    kept.push(primitive_for_tag(arena, tag).unwrap_or(member));
+                }
             } else {
                 kept.push(member);
             }

@@ -82,7 +82,9 @@ pub(super) const PASSES: &[Pass] = &[
     Pass {
         name: "unreachable_code",
         doc: "Turns the flow facts into unreachable-code, fallthrough, return-path and unassigned-use reports.",
-        run: |_, _, ctx| unreachable_code::check_unreachable_code(ctx),
+        run: |program, scoping, ctx| {
+            unreachable_code::check_unreachable_code(program, scoping, ctx);
+        },
     },
 ];
 

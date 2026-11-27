@@ -253,6 +253,13 @@ pub mod messages {
         )
     }
 
+    pub fn new_target_lacks_construct_signature() -> DiagnosticMessage {
+        DiagnosticMessage::new(
+            DiagnosticCode::ImplicitAnyNewTarget,
+            "'new' expression, whose target lacks a construct signature, implicitly has an 'any' type.",
+        )
+    }
+
     pub fn argument_not_assignable(
         arena: &TypeArena,
         actual: TypeId,
@@ -884,6 +891,13 @@ pub mod messages {
         DiagnosticMessage::new(
             DiagnosticCode::UnresolvedNamespace,
             format!("Cannot find namespace '{name}'."),
+        )
+    }
+
+    pub fn namespace_no_exported_member(namespace: &str, name: &str) -> DiagnosticMessage {
+        DiagnosticMessage::new(
+            DiagnosticCode::NamespaceNoExportedMember,
+            format!("Namespace '{namespace}' has no exported member '{name}'."),
         )
     }
 

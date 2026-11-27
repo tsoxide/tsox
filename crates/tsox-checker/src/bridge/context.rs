@@ -159,6 +159,10 @@ pub struct CheckContext<'ast, 'src> {
     /// later `x == 2` there. tsox's flow narrowing does not narrow a literal to `never`, so this
     /// set carries that signal forward for the next comparison of the same name.
     pub tautology_compared_names: std::collections::HashSet<String>,
+    // The start offsets of the `switch` statements whose cases cover every value of their
+    // discriminant. The flow is run again with these before the return-path and unassigned
+    // reports are made (see unreachable_code::check_unreachable_code).
+    pub exhaustive_switches: std::collections::HashSet<u32>,
     /// Start offsets of comma expressions that are the callee of an indirect call, `(0, o.f)()`,
     /// whose unused left side tsc does not report (its `isIndirectCall`).
     pub indirect_call_sequences: std::collections::HashSet<u32>,
@@ -270,6 +274,12 @@ pub struct CheckContext<'ast, 'src> {
     pub destructured_groups: Vec<DestructuredGroup>,
     // `const isString = typeof x === "string"`: what the condition narrows on each edge, for a later
     // `if (isString)` (control flow analysis of aliased conditions).
+    /// `const kind = obj.kind` / `const { kind } = obj`: the name stands for the property of a
+    /// variable nothing assigns to, so testing it narrows that variable (tsc's aliased discriminant).
+    pub discriminant_aliases:
+        std::collections::HashMap<oxc_semantic::SymbolId, (oxc_semantic::SymbolId, String)>,
+    /// Type guards that are methods, by method name; see `narrow/method_guards.rs`.
+    pub method_guards: std::collections::HashMap<String, crate::bridge::narrow::MethodGuard>,
     pub aliased_conditions: std::collections::HashMap<
         oxc_semantic::SymbolId,
         (
@@ -604,6 +614,7 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             in_constructor: false,
             compared_names: Default::default(),
             tautology_compared_names: Default::default(),
+            exhaustive_switches: Default::default(),
             indirect_call_sequences: Default::default(),
             expandos: Default::default(),
             var_annotations: Default::default(),
@@ -634,6 +645,8 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             class_instances: std::collections::HashSet::new(),
             type_predicates: std::collections::HashMap::new(),
             destructured_groups: Vec::new(),
+            discriminant_aliases: Default::default(),
+            method_guards: Default::default(),
             aliased_conditions: Default::default(),
             destructured_index: std::collections::HashMap::new(),
             overload_signatures: std::collections::HashMap::new(),

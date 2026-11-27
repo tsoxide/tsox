@@ -60,10 +60,11 @@ the message function that builds it, and the code areas that call that function 
 | TSR1217 | `ImportTypeOnlyValue` | TS1361 | `import_type_only_value` | `tsox-checker/bridge/expressions` |
 | TSR1218 | `PropertyNeedsNewerLib` | TS2550 | `property_needs_newer_lib` | `tsox-checker/bridge/expressions` |
 | TSR1219 | `ClassUsedBeforeDeclaration` | TS2449 | `class_used_before_declaration` | `tsox-checker/bridge/use_before_declaration` |
+| TSR1220 | `NamespaceNoExportedMember` | TS2694 | `namespace_no_exported_member` | `tsox-checker/bridge/unresolved_names` |
 | TSR1301 | `ArrayDestructuringRequiresArray` | TS2488 | `array_destructuring_requires_array` | `tsox-checker/bridge/statements` |
 | TSR1401 | `ImplicitAnyParameter` | TS7006 | `parameter_implicitly_any` | `tsox-checker/bridge/implicit_any`, `tsox-checker/bridge/mod`, `tsox-checker/bridge/statements` |
 | TSR1402 | `ImplicitAnyElement` | TS7053 | `element_implicitly_any` | `tsox-checker/bridge/expressions` |
-| TSR1403 | `ImplicitAnyThis` | TS2683 | `this_implicitly_any` | `tsox-checker/bridge/expressions` |
+| TSR1403 | `ImplicitAnyThis` | TS2683 | `this_implicitly_any` | `tsox-checker/bridge/expressions`, `tsox-checker/bridge/statements` |
 | TSR1404 | `ImplicitAnyReturn` | TS7023 | `return_implicitly_any` | `tsox-checker/bridge/statements`, `tsox-project/module_resolution/check` |
 | TSR1405 | `ImplicitAnySetter` | TS7032 | `setter_property_implicitly_any` | `tsox-checker/bridge/statements` |
 | TSR1406 | `ImplicitAnyMember` | TS7008 | `member_implicitly_any` | `tsox-checker/bridge/implicit_any` |
@@ -73,6 +74,7 @@ the message function that builds it, and the code areas that call that function 
 | TSR1410 | `ImplicitAnyRestParameter` | TS7019 | `rest_parameter_implicitly_any` | `tsox-checker/bridge/implicit_any`, `tsox-checker/bridge/statements` |
 | TSR1411 | `ImplicitAnyYield` | TS7057 | `yield_implicitly_any` | `tsox-checker/bridge/implicit_any` |
 | TSR1412 | `ImplicitAnyJsxElement` | TS7026 | `jsx_element_implicitly_any` | `tsox-checker/bridge/expressions` |
+| TSR1413 | `ImplicitAnyNewTarget` | TS7009 | `new_target_lacks_construct_signature` | `tsox-checker/bridge/expressions` |
 | TSR1501 | `TypeArgumentCountMismatch` | TS2314 | `type_argument_count_mismatch` | `tsox-checker/bridge/mod` |
 | TSR1502 | `TypeIsNotGeneric` | TS2315 | `type_is_not_generic` | `tsox-checker/bridge/mod` |
 | TSR1503 | `DuplicateTypeDeclaration` | TS2300 | `duplicate_type_declaration` | `tsox-checker/bridge/declare`, `tsox-checker/bridge/duplicate_members`, `tsox-checker/bridge/duplicates` |

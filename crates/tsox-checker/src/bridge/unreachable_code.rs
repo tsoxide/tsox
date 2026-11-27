@@ -33,7 +33,24 @@ pub fn analyze_flow(program: &Program<'_>, scoping: &Scoping, ctx: &mut CheckCon
     ctx.flow = crate::reachability::analyze_as(program, scoping, forced_module);
 }
 
-pub fn check_unreachable_code(ctx: &mut CheckContext<'_, '_>) {
+pub fn check_unreachable_code(
+    program: &Program<'_>,
+    scoping: &Scoping,
+    ctx: &mut CheckContext<'_, '_>,
+) {
+    // The first walk ran before any body was checked, so it could not know which `switch`
+    // statements cover their discriminant. With such switches found, the walk is made again
+    // knowing them; every report below then reads that answer: a function whose cases all
+    // return does not run off its end, code after the switch can be dead, and a variable
+    // assigned in every case is assigned. The syntactic walk is cheap and only repeated for a
+    // file that has one.
+    if !ctx.exhaustive_switches.is_empty() && !is_declaration_file(ctx.file_name) {
+        let forced_module = ctx.option(crate::check_options::OptionField::ModuleDetectionForce)
+            && !program.source_type.is_typescript_definition();
+        let exhausted = std::mem::take(&mut ctx.exhaustive_switches);
+        ctx.flow =
+            crate::reachability::analyze_exhausting(program, scoping, forced_module, &exhausted);
+    }
     let unreachable = !ctx.option(crate::check_options::OptionField::AllowUnreachableCode);
     let fallthrough = ctx.option(crate::check_options::OptionField::NoFallthroughCasesInSwitch);
     let unassigned = ctx.option(crate::check_options::OptionField::StrictNullChecks);

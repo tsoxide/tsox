@@ -558,23 +558,13 @@ fn verify(o: &Opts) -> Result<u8, String> {
             recorded.keys().chain(found.keys()).collect();
         for name in names {
             let old = recorded.get(name).unwrap_or(&empty);
-            // A file the run did not report is missing, which is worse than any verdict; only
-            // a recorded match with no lines can be absent from a run without meaning anything.
+            // A part's report lists only the files where tsox and tsc differ or say something, so
+            // a file absent from a part that did run said nothing on either side: it is clean.
+            // A recorded false positive or gap that a fix clears completely therefore shows as
+            // better. (A part with no report at all is handled above, as missing.)
             let new = match found.get(name) {
                 Some(entry) => entry,
-                None if old.v == "MATCH" && old.lines.is_empty() => &empty,
-                None => {
-                    kinds[1].push((
-                        part.clone(),
-                        name.clone(),
-                        old.clone(),
-                        Entry {
-                            v: "MISSING".into(),
-                            lines: vec![],
-                        },
-                    ));
-                    continue;
-                }
+                None => &empty,
             };
             let slot = match judge(old, new) {
                 Judgement::Same => 0,
