@@ -78,6 +78,20 @@ fn check_identifier_declarator(
     {
         crate::bridge::narrow::register_aliased_condition(symbol_id, init, scoping, ctx);
     }
+    if decl_kind == VariableDeclarationKind::Const
+        && declarator.type_annotation.is_none()
+        && let Some(symbol_id) = id.symbol_id.get()
+        && let Some(Expression::StaticMemberExpression(member)) = &declarator.init
+        && !member.optional
+    {
+        crate::bridge::narrow::register_discriminant_alias(
+            symbol_id,
+            &member.object,
+            member.property.name.as_str(),
+            scoping,
+            ctx,
+        );
+    }
 
     // With no annotation on the variable there is no contextual type for the
     // function on the right, so any untyped parameter of it is a genuine
@@ -308,6 +322,22 @@ fn check_destructured_declarator(
     scoping: &Scoping,
     ctx: &mut CheckContext<'_, '_>,
 ) {
+    if decl_kind == VariableDeclarationKind::Const
+        && declarator.type_annotation.is_none()
+        && let BindingPattern::ObjectPattern(pattern) = &declarator.id
+        && let Some(init) = &declarator.init
+    {
+        for property in &pattern.properties {
+            if let (Some(name), BindingPattern::BindingIdentifier(local)) =
+                (property.key.static_name(), &property.value)
+                && let Some(symbol_id) = local.symbol_id.get()
+            {
+                crate::bridge::narrow::register_discriminant_alias(
+                    symbol_id, init, &name, scoping, ctx,
+                );
+            }
+        }
+    }
     let annotation_outcome = match &declarator.type_annotation {
         None => AnnotationOutcome::Absent,
         Some(annotation) => {

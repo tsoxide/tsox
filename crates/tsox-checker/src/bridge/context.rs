@@ -274,6 +274,10 @@ pub struct CheckContext<'ast, 'src> {
     pub destructured_groups: Vec<DestructuredGroup>,
     // `const isString = typeof x === "string"`: what the condition narrows on each edge, for a later
     // `if (isString)` (control flow analysis of aliased conditions).
+    /// `const kind = obj.kind` / `const { kind } = obj`: the name stands for the property of a
+    /// variable nothing assigns to, so testing it narrows that variable (tsc's aliased discriminant).
+    pub discriminant_aliases:
+        std::collections::HashMap<oxc_semantic::SymbolId, (oxc_semantic::SymbolId, String)>,
     pub aliased_conditions: std::collections::HashMap<
         oxc_semantic::SymbolId,
         (
@@ -639,6 +643,7 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             class_instances: std::collections::HashSet::new(),
             type_predicates: std::collections::HashMap::new(),
             destructured_groups: Vec::new(),
+            discriminant_aliases: Default::default(),
             aliased_conditions: Default::default(),
             destructured_index: std::collections::HashMap::new(),
             overload_signatures: std::collections::HashMap::new(),

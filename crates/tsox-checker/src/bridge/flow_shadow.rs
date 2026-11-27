@@ -808,9 +808,14 @@ impl<'ast> FlowShadow<'ast> {
         let names_symbol = match &discriminant {
             // The walk holds one variable at a time; `switch (true)` narrows through any.
             SwitchDiscriminant::True => return Found::Unknown,
-            SwitchDiscriminant::Identifier(s)
-            | SwitchDiscriminant::Property(s, _)
-            | SwitchDiscriminant::Typeof(s) => *s == symbol_id,
+            SwitchDiscriminant::Identifier(s) => {
+                *s == symbol_id
+                    || ctx
+                        .discriminant_aliases
+                        .get(s)
+                        .is_some_and(|(root, _)| *root == symbol_id)
+            }
+            SwitchDiscriminant::Property(s, _) | SwitchDiscriminant::Typeof(s) => *s == symbol_id,
         };
         if !names_symbol {
             return Found::Ty(base);

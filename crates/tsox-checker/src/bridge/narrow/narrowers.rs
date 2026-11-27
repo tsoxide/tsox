@@ -76,7 +76,44 @@ fn aliased_condition(
     };
     let reference = id.reference_id.get()?;
     let symbol_id = scoping.get_reference(reference).symbol_id()?;
-    ctx.aliased_conditions.get(&symbol_id).cloned()
+    let (on_true, on_false) = ctx.aliased_conditions.get(&symbol_id).cloned()?;
+    // The aliased condition narrowed from the variable's type where the `const` was declared;
+    // here the variable may already be narrower (`a || b` tests `b` after `a` failed), so what
+    // the alias says is kept only to the members the current type still has.
+    let mut on_true = within_current(on_true, ctx);
+    let mut on_false = within_current(on_false, ctx);
+    // The `const` itself is tested too (`perf && perf.mark`): its own truthiness narrows it as
+    // well, so the alias adds to that rather than replacing it.
+    if let Some((truthy, falsy)) = truthy_identifier(test, scoping, ctx) {
+        on_true.extend(truthy);
+        on_false.extend(falsy);
+    }
+    Some((on_true, on_false))
+}
+
+fn within_current(state: NarrowState, ctx: &mut CheckContext<'_, '_>) -> NarrowState {
+    let mut out = state.clone();
+    for &(symbol_id, stored) in &state.0 {
+        let Some(current) = ctx.narrow.get(symbol_id) else {
+            continue;
+        };
+        let current_members = union_members(&ctx.arena, current).unwrap_or_else(|| vec![current]);
+        let stored_members = union_members(&ctx.arena, stored).unwrap_or_else(|| vec![stored]);
+        let kept: Vec<TypeId> = stored_members
+            .into_iter()
+            .filter(|&member| {
+                current_members
+                    .iter()
+                    .any(|&c| crate::subtyping::is_subtype(&ctx.arena, member, c))
+            })
+            .collect();
+        if kept.is_empty() {
+            out.insert(symbol_id, ctx.arena.never());
+        } else {
+            out.insert(symbol_id, ctx.arena.alloc_union(kept));
+        }
+    }
+    out
 }
 
 fn parenthesized(

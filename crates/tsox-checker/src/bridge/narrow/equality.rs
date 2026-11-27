@@ -210,13 +210,18 @@ fn literal<'a, 'b>(
     let negated = test.negated;
     let (symbol_id, literal) = literal_check(&bin.left, &bin.right, scoping, &mut ctx.arena)
         .or_else(|| literal_check(&bin.right, &bin.left, scoping, &mut ctx.arena))?;
-    Some(by_symbol(
-        ctx,
-        symbol_id,
-        move |arena, current, want_true| {
-            narrow_by_literal(arena, current, literal, want_true != negated)
-        },
-    ))
+    let mut pair = by_symbol(ctx, symbol_id, move |arena, current, want_true| {
+        narrow_by_literal(arena, current, literal, want_true != negated)
+    });
+    // `const kind = obj.kind; if (kind === "a")` narrows `obj` as `obj.kind === "a"` would.
+    if let Some((root, property)) = ctx.discriminant_aliases.get(&symbol_id).cloned() {
+        let by_root = by_symbol(ctx, root, move |arena, current, want_true| {
+            narrow_by_property_literals(arena, current, &property, &[literal], want_true != negated)
+        });
+        pair.0.extend(by_root.0);
+        pair.1.extend(by_root.1);
+    }
+    Some(pair)
 }
 
 // `shape.kind === "circle"`: narrows `shape` itself, when it is a union of object types, to the

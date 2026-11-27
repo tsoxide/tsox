@@ -10,6 +10,10 @@ pub fn register_destructured_group(
     source: TypeId,
     ctx: &mut CheckContext<'_, '_>,
 ) {
+    let source = match ctx.arena.get(source) {
+        Type::GenericParameter(_, _, Some(bound)) => *bound,
+        _ => source,
+    };
     if union_members(&ctx.arena, source).is_none() {
         return;
     }
@@ -62,6 +66,13 @@ pub(super) fn propagate_destructured(
                 .iter()
                 .find(|entry| &*entry.name == name)
                 .map(|entry| entry.type_id),
+            // A tuple member is read by position: the name is the index.
+            Type::Tuple(elements) => name
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| elements.get(index))
+                .filter(|element| !element.rest && !element.optional)
+                .map(|element| element.type_id),
             _ => None,
         };
         let mut kept = Vec::new();
@@ -94,7 +105,29 @@ pub(super) fn propagate_destructured(
             if !complete {
                 continue;
             }
-            let narrowed_type = ctx.arena.alloc_union(parts);
+            // What the sibling is already narrowed to still holds (`if (payload) { if (kind ===
+            // "A") ... }`): keep only the members of the source's view that fit it.
+            if let Some(current) = ctx.narrow.get(other) {
+                let current_parts =
+                    union_members(&ctx.arena, current).unwrap_or_else(|| vec![current]);
+                let all: Vec<TypeId> = parts
+                    .iter()
+                    .flat_map(|&p| union_members(&ctx.arena, p).unwrap_or_else(|| vec![p]))
+                    .collect();
+                parts = all
+                    .into_iter()
+                    .filter(|&part| {
+                        current_parts
+                            .iter()
+                            .any(|&c| crate::subtyping::is_subtype(&ctx.arena, part, c))
+                    })
+                    .collect();
+            }
+            let narrowed_type = if parts.is_empty() {
+                ctx.arena.never()
+            } else {
+                ctx.arena.alloc_union(parts)
+            };
             out.insert(other, narrowed_type);
         }
     }

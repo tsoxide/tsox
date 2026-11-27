@@ -71,6 +71,25 @@ pub fn narrow_switch_case(
     propagate_destructured(ctx, state)
 }
 
+// `const { kind } = obj; switch (kind) { case "a": ... }`: the cases narrow `obj` as
+// `switch (obj.kind)` would.
+fn alias_root_state(
+    ctx: &mut CheckContext<'_, '_>,
+    alias: SymbolId,
+    literals: &[TypeId],
+    positive: bool,
+) -> NarrowState {
+    let Some((root, property)) = ctx.discriminant_aliases.get(&alias).cloned() else {
+        return NarrowState::new();
+    };
+    let Some(current) = current_type(ctx, root) else {
+        return NarrowState::new();
+    };
+    let narrowed =
+        narrow_by_property_literals(&mut ctx.arena, current, &property, literals, positive);
+    NarrowState::from_single(root, narrowed)
+}
+
 pub(super) fn narrow_switch_case_inner(
     discriminant: &SwitchDiscriminant,
     tests: &[&Expression],
@@ -82,11 +101,14 @@ pub(super) fn narrow_switch_case_inner(
             let Some(literals) = resolve_all_literals(tests, &mut ctx.arena) else {
                 return NarrowState::new();
             };
+            let alias = alias_root_state(ctx, *symbol_id, &literals, true);
             let Some(current) = current_type(ctx, *symbol_id) else {
-                return NarrowState::new();
+                return alias;
             };
             let narrowed = narrow_by_literals(&mut ctx.arena, current, &literals, true);
-            NarrowState::from_single(*symbol_id, narrowed)
+            let mut state = NarrowState::from_single(*symbol_id, narrowed);
+            state.extend(alias);
+            state
         }
         SwitchDiscriminant::Property(symbol_id, property) => {
             let Some(literals) = resolve_all_literals(tests, &mut ctx.arena) else {
@@ -153,11 +175,14 @@ pub(super) fn narrow_switch_default_inner(
                 .iter()
                 .filter_map(|test| resolve_literal(test, &mut ctx.arena))
                 .collect();
+            let alias = alias_root_state(ctx, *symbol_id, &literals, false);
             let Some(current) = current_type(ctx, *symbol_id) else {
-                return NarrowState::new();
+                return alias;
             };
             let narrowed = narrow_by_literals(&mut ctx.arena, current, &literals, false);
-            NarrowState::from_single(*symbol_id, narrowed)
+            let mut state = NarrowState::from_single(*symbol_id, narrowed);
+            state.extend(alias);
+            state
         }
         SwitchDiscriminant::Property(symbol_id, property) => {
             let literals: Vec<TypeId> = tests

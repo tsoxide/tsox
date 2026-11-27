@@ -186,6 +186,11 @@ fn register_destructured_group(
     scoping: &Scoping,
     ctx: &mut CheckContext<'_, '_>,
 ) {
+    // `<T extends Action>({ kind, payload }: T)`: the bindings are tied through the constraint.
+    let type_id = match ctx.arena.get(type_id) {
+        Type::GenericParameter(_, _, Some(bound)) => *bound,
+        _ => type_id,
+    };
     let is_union = matches!(ctx.arena.get(type_id), Type::Union(members) if members.len() > 1);
     if !is_union {
         return;
@@ -281,6 +286,79 @@ fn bind_tuple_pattern(
     }
 }
 
+// Destructuring a union of tuples. Nothing is reported for a short member: tsc reads the missing
+// position as `undefined`. A rest element reads as `any`, as the members' leftovers differ.
+fn bind_tuple_union_pattern(
+    array: &ArrayPattern,
+    members: &[TypeId],
+    scoping: &Scoping,
+    ctx: &mut CheckContext<'_, '_>,
+) {
+    for (position, slot) in array.elements.iter().enumerate() {
+        let Some(element_pattern) = slot else {
+            continue;
+        };
+        let mut parts = Vec::with_capacity(members.len());
+        for &member in members {
+            let Type::Tuple(elements) = ctx.arena.get(member).clone() else {
+                continue;
+            };
+            let rest = elements.last().filter(|e| e.rest).copied();
+            let fixed = elements.len() - usize::from(rest.is_some());
+            if position < fixed {
+                let element = elements[position];
+                parts.push(element.type_id);
+                if element.optional {
+                    parts.push(ctx.arena.undefined());
+                }
+            } else {
+                if let Some(rest) = rest {
+                    parts.push(rest.type_id);
+                }
+                parts.push(ctx.arena.undefined());
+            }
+        }
+        let bound = ctx.arena.alloc_union(parts);
+        bind_pattern_in(element_pattern, bound, false, scoping, ctx);
+    }
+    if let Some(rest_pattern) = &array.rest {
+        let any = ctx.arena.any();
+        bind_pattern(&rest_pattern.argument, any, scoping, ctx);
+    }
+}
+
+// `const [kind, payload] = args` and `function f([kind, payload]: Args)` over a union of tuples:
+// like an object group, the names stay tied by position (see `propagate_destructured`).
+fn register_tuple_group(
+    array: &ArrayPattern,
+    source: TypeId,
+    scoping: &Scoping,
+    ctx: &mut CheckContext<'_, '_>,
+) {
+    let mut members = Vec::new();
+    for (position, slot) in array.elements.iter().enumerate() {
+        let Some(BindingPattern::BindingIdentifier(id)) = slot else {
+            continue;
+        };
+        let Some(symbol_id) = id.symbol_id.get() else {
+            continue;
+        };
+        if !scoping.symbol_is_mutated(symbol_id) {
+            members.push((symbol_id, position.to_string()));
+        }
+    }
+    if members.len() < 2 {
+        return;
+    }
+    let group = ctx.destructured_groups.len();
+    for (symbol, property) in &members {
+        ctx.destructured_index
+            .insert(*symbol, (group, property.clone()));
+    }
+    ctx.destructured_groups
+        .push(crate::bridge::context::DestructuredGroup { source, members });
+}
+
 fn bind_array_pattern(
     array: &ArrayPattern,
     type_id: TypeId,
@@ -292,6 +370,19 @@ fn bind_array_pattern(
     // `b` the second, and `...rest` the tuple of what is left.
     if let Type::Tuple(elements) = ctx.arena.get(type_id).clone() {
         bind_tuple_pattern(array, type_id, &elements, scoping, ctx);
+        return;
+    }
+
+    // A union of tuples (`[1, 2] | [3, 4] | [5]`) is read by position in every member: a position
+    // holds the union of what each member has there, and `undefined` where a member is too short.
+    if let Type::Union(members) = ctx.arena.get(type_id).clone()
+        && !members.is_empty()
+        && members
+            .iter()
+            .all(|member| matches!(ctx.arena.get(*member), Type::Tuple(_)))
+    {
+        register_tuple_group(array, type_id, scoping, ctx);
+        bind_tuple_union_pattern(array, &members, scoping, ctx);
         return;
     }
 
