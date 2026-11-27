@@ -44,7 +44,7 @@ use oxc_span::{GetSpan, Span};
 use super::context::CheckContext;
 use super::narrow::{
     NarrowState, SwitchDiscriminant, assigned_narrowed_type, narrow_condition, narrow_switch_case,
-    narrow_switch_default, switch_discriminant,
+    narrow_switch_default, switch_discriminant, without_repeated_tags,
 };
 use crate::arena::TypeId;
 use crate::flow::{Assume, EdgeKind, FileFlow, FlowId, FlowKind, build_with_roots};
@@ -827,7 +827,17 @@ impl<'ast> FlowShadow<'ast> {
         let state = if includes_default {
             narrow_switch_default(&discriminant, &tests_of(&all_spans), scoping, ctx)
         } else {
-            narrow_switch_case(&discriminant, &tests_of(&matched_spans), scoping, ctx)
+            // A `typeof` tag an earlier case already names is a case nothing reaches.
+            let matched_tests = tests_of(&matched_spans);
+            let first = matched_spans.iter().map(|span| span.start).min();
+            let earlier: Vec<&Expression> = switch
+                .cases
+                .iter()
+                .filter_map(|case| case.test.as_ref())
+                .filter(|test| first.is_some_and(|first| test.span().start < first))
+                .collect();
+            let reached = without_repeated_tags(&discriminant, &matched_tests, &earlier);
+            narrow_switch_case(&discriminant, &reached, scoping, ctx)
         };
         ctx.narrow = saved;
         Found::Ty(state.get(symbol_id).unwrap_or(base))

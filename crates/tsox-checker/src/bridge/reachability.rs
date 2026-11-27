@@ -212,10 +212,24 @@ pub fn analyze(program: &Program<'_>, scoping: &Scoping) -> Reachability {
 // `forced_module` is `moduleDetection: "force"`: a file with no import or export is still a module,
 // so a `let` at its top is local to it, not a global.
 pub fn analyze_as(program: &Program<'_>, scoping: &Scoping, forced_module: bool) -> Reachability {
+    analyze_exhausting(program, scoping, forced_module, &HashSet::new())
+}
+
+// The same walk, told which `switch` statements (by the start offset of the statement) have
+// cases that cover their discriminant. Past such a switch, with no `default`, the flow can only
+// arrive from a case, which is what tsc's `isExhaustiveSwitchStatement` gives its binder's
+// graph: a function whose every case returns does not run off its end.
+pub fn analyze_exhausting(
+    program: &Program<'_>,
+    scoping: &Scoping,
+    forced_module: bool,
+    exhausted: &HashSet<u32>,
+) -> Reachability {
     // Two walks. The first only learns which variables are tracked and which function each
     // lives in, so that a read that comes before its declaration (a hoisted `var`) is known to
     // be of a tracked variable. Its other results are thrown away.
     let mut discover = Analyzer::new(scoping, HashMap::new(), HashMap::new(), HashSet::new());
+    discover.exhausted = exhausted.clone();
     discover.is_script = program.source_type.is_script() && !forced_module;
     let predicates = predicate_functions(program);
     discover.predicates = predicates.clone();
@@ -229,6 +243,7 @@ pub fn analyze_as(program: &Program<'_>, scoping: &Scoping, forced_module: bool)
         discover.last_assignment,
         discover.definite,
     );
+    analyzer.exhausted = exhausted.clone();
     analyzer.is_script = program.source_type.is_script() && !forced_module;
     analyzer.predicates = predicates;
     analyzer.namespaces = namespaces;
@@ -464,6 +479,10 @@ struct Analyzer<'s> {
     // The nearest function around the point being walked, numbered as they are entered.
     function: usize,
     functions: usize,
+    // The `switch` statements, by start offset, whose cases cover every value of the
+    // discriminant. Only the checker knows (it needs types), so it hands them in after the
+    // bodies are checked; the flow then has no way past such a switch except through a case.
+    exhausted: HashSet<u32>,
     // Learning which variables are tracked (first walk), or reporting (second).
     discovering: bool,
     tracked: HashMap<SymbolId, Tracked>,
@@ -525,6 +544,7 @@ impl<'s> Analyzer<'s> {
             containers: 0,
             function: 0,
             functions: 0,
+            exhausted: HashSet::new(),
             discovering: true,
             tracked,
             declaration: None,
@@ -1790,7 +1810,9 @@ impl<'a, 's> Analyzer<'s> {
         }
         self.st = end;
         self.arrive(post);
-        if !statement.cases.iter().any(|case| case.test.is_none()) {
+        if !statement.cases.iter().any(|case| case.test.is_none())
+            && !self.exhausted.contains(&statement.span.start)
+        {
             self.st = top;
             self.arrive(post);
         }

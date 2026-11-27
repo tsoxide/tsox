@@ -159,6 +159,10 @@ pub struct CheckContext<'ast, 'src> {
     /// later `x == 2` there. tsox's flow narrowing does not narrow a literal to `never`, so this
     /// set carries that signal forward for the next comparison of the same name.
     pub tautology_compared_names: std::collections::HashSet<String>,
+    // The start offsets of the `switch` statements whose cases cover every value of their
+    // discriminant. The flow is run again with these before the return-path and unassigned
+    // reports are made (see unreachable_code::check_unreachable_code).
+    pub exhaustive_switches: std::collections::HashSet<u32>,
     /// Start offsets of comma expressions that are the callee of an indirect call, `(0, o.f)()`,
     /// whose unused left side tsc does not report (its `isIndirectCall`).
     pub indirect_call_sequences: std::collections::HashSet<u32>,
@@ -604,6 +608,7 @@ impl<'ast, 'src> CheckContext<'ast, 'src> {
             in_constructor: false,
             compared_names: Default::default(),
             tautology_compared_names: Default::default(),
+            exhaustive_switches: Default::default(),
             indirect_call_sequences: Default::default(),
             expandos: Default::default(),
             var_annotations: Default::default(),
