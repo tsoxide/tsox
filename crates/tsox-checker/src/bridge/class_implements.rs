@@ -172,13 +172,32 @@ fn first_incompatible_property(
             None if !property.optional => return Some((property.name.to_string(), false)),
             None => {}
             Some(own) => {
-                if !crate::subtyping::is_subtype(&ctx.arena, own.type_id, property.type_id) {
+                if !crate::subtyping::is_subtype(&ctx.arena, own.type_id, property.type_id)
+                    && !overloaded_methods_compatible(ctx, own, property)
+                {
                     return Some((property.name.to_string(), true));
                 }
             }
         }
     }
     None
+}
+
+// tsc relates methods (unlike function-typed properties) with bivariant parameters, so a
+// derived overload set whose signatures are narrower than the base method's (`(x: 'a')` and
+// `(x: 'b')` against `(x: string)`) still extends it. When either side is an overload set of
+// methods, the pair is taken as compatible if the relation holds in either direction.
+fn overloaded_methods_compatible(
+    ctx: &CheckContext<'_, '_>,
+    own: &crate::types::PropertyEntry,
+    want: &crate::types::PropertyEntry,
+) -> bool {
+    use crate::types::Type;
+    let is_overload_set = |id| matches!(ctx.arena.get(id), Type::Intersection(_));
+    own.is_method
+        && want.is_method
+        && (is_overload_set(own.type_id) || is_overload_set(want.type_id))
+        && crate::subtyping::is_subtype(&ctx.arena, want.type_id, own.type_id)
 }
 
 // The types a derived and a base type give property `name`.
@@ -328,6 +347,15 @@ fn check_interface<'ast>(
         ) else {
             continue;
         };
+        // A base whose type arguments failed to resolve (`Collection<error, error>`) is not
+        // judged: what a member would be against it is unknown, and that was reported already.
+        if ctx.arena.app_parts(base).is_some_and(|(_, arguments)| {
+            arguments
+                .iter()
+                .any(|&argument| matches!(ctx.arena.get(argument), crate::types::Type::Error))
+        }) {
+            continue;
+        }
         // Only a property both sides declare with conflicting types is reported. A base the
         // namespace models only partly (a class, say) can leave the derived shape without
         // members it really has, which must not read as a mismatch.

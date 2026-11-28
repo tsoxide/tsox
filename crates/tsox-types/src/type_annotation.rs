@@ -1389,14 +1389,23 @@ pub fn resolve_object_members(
             }
         };
 
-        // ObjectType's merge-join over sorted property lists gives wrong answers
-        // when a name appears twice, and two method signatures with one name are an
-        // overload set, which has no representation here. Either way the
-        // declaration is not modelled, so it stays unresolvable.
-        if properties
-            .iter()
-            .any(|existing| existing.name == entry.name)
+        // ObjectType's merge-join over sorted property lists gives wrong answers when a name
+        // appears twice, so a repeated name must be folded into one entry. Two method
+        // signatures with one name are an overload set, held as the intersection of their
+        // function types, as class methods and merged interfaces already do (the standard
+        // library's `JSON.stringify`, `Object.defineProperty` and most constructors have
+        // them). Any other repeat is not modelled, so the declaration stays unresolvable.
+        if let Some(existing) = properties
+            .iter_mut()
+            .find(|existing| existing.name == entry.name)
         {
+            if existing.is_method && entry.is_method && existing.optional == entry.optional {
+                let overload = arena
+                    .alloc_intersection(vec![existing.type_id, entry.type_id])
+                    .ok()?;
+                existing.type_id = overload;
+                continue;
+            }
             return None;
         }
         properties.push(entry);

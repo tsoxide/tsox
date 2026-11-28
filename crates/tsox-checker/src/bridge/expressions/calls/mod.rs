@@ -23,6 +23,29 @@ use super::{check_excess_properties, infer_member_access_type, resolve_identifie
 // parameter and report a bogus mismatch on the first argument. The error type is
 // compatible with everything, so the parameter it lands on stops constraining its
 // arguments without causing a second diagnostic.
+/// Whether an argument that does not fit an optional parameter (`x?: T`) fits it once
+/// `undefined` is allowed, as under strictNullChecks it is: `f(undefined)` and `f(maybe)` with
+/// `maybe: T | undefined` are not errors. Only the decision is widened; the parameter is still
+/// named by its written type in messages, as tsc names it. A rest parameter does not count.
+pub(in crate::bridge) fn optional_param_takes(
+    ctx: &mut CheckContext<'_, '_>,
+    params: &[tsox_types::types::Param],
+    index: usize,
+    argument: TypeId,
+    expected: TypeId,
+    relation: impl Fn(&mut CheckContext<'_, '_>, TypeId, TypeId) -> bool,
+) -> bool {
+    let optional = params
+        .get(index)
+        .is_some_and(|param| param.optional && !param.rest);
+    if !optional || !ctx.option(crate::check_options::OptionField::StrictNullChecks) {
+        return false;
+    }
+    let undefined = ctx.arena.undefined();
+    let widened = ctx.arena.alloc_union(vec![expected, undefined]);
+    relation(ctx, argument, widened)
+}
+
 fn resolve_explicit_type_arguments(
     type_arguments: Option<&oxc_ast::ast::TSTypeParameterInstantiation>,
     ctx: &mut CheckContext<'_, '_>,
@@ -1194,7 +1217,16 @@ fn check_callable(
         if GenericSolver::mentions_any_param(&ctx.arena, expected, &own_ids) {
             continue;
         }
-        if !ctx.is_assignable_instantiating(arg_type, expected) {
+        if !ctx.is_assignable_instantiating(arg_type, expected)
+            && !optional_param_takes(
+                ctx,
+                &function_type.params,
+                index,
+                arg_type,
+                expected,
+                |ctx, argument, widened| ctx.is_assignable_instantiating(argument, widened),
+            )
+        {
             // tsc reports a bad property of an object literal argument on the property
             // itself, as a plain assignability error; only an argument it cannot take
             // apart gets the `Argument of type ...` message.

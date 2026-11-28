@@ -559,7 +559,18 @@ pub(in crate::bridge) fn fit_of_candidate(
             };
             let expected =
                 GenericSolver::substitute_type_params(&mut ctx.arena, parameter_type, &bindings);
-            if !crate::subtyping::is_subtype(&ctx.arena, *argument_type, expected) {
+            if !crate::subtyping::is_subtype(&ctx.arena, *argument_type, expected)
+                && !super::optional_param_takes(
+                    ctx,
+                    &function.params,
+                    index,
+                    *argument_type,
+                    expected,
+                    |ctx, argument, widened| {
+                        crate::subtyping::is_subtype(&ctx.arena, argument, widened)
+                    },
+                )
+            {
                 return Fit::WrongArgument {
                     index,
                     parameter: expected,

@@ -232,7 +232,9 @@ pub fn check_statement(stmt: &Statement, scoping: &Scoping, ctx: &mut CheckConte
             }
             ExportDefaultDeclarationKind::TSInterfaceDeclaration(_) => {}
             other => {
-                if let Some(expr) = other.as_expression() {
+                if let Some(expr) = other.as_expression()
+                    && !export_names_a_type(expr, scoping, ctx)
+                {
                     infer_expression_type(expr, scoping, ctx);
                 }
             }
@@ -274,11 +276,33 @@ pub fn check_statement(stmt: &Statement, scoping: &Scoping, ctx: &mut CheckConte
                     assign.span,
                 );
             }
-            infer_expression_type(&assign.expression, scoping, ctx);
+            if !export_names_a_type(&assign.expression, scoping, ctx) {
+                infer_expression_type(&assign.expression, scoping, ctx);
+            }
         }
         // `export as namespace X` only names a global alias of the module.
         Statement::TSNamespaceExportDeclaration(_) => {}
         other => support::push_unsupported(other, ctx),
+    }
+}
+
+// `export = Point;` and `export default Point;` where `Point` is an interface or alias: the module
+// exports the type, which is allowed, so the name is not read as a value (that would be TS2693).
+// A name that is not declared at all is still checked, and reported.
+fn export_names_a_type(
+    expression: &Expression,
+    scoping: &Scoping,
+    ctx: &CheckContext<'_, '_>,
+) -> bool {
+    let Expression::Identifier(ident) = expression else {
+        return false;
+    };
+    match crate::bridge::narrow::resolve_symbol_id(ident, scoping) {
+        Some(symbol) => ctx
+            .symbol_capabilities
+            .get(&symbol)
+            .is_some_and(|spaces| spaces.has_type && !spaces.has_value),
+        None => ctx.namespace.contains(&ident.name),
     }
 }
 

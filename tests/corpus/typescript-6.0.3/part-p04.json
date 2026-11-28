@@ -206,7 +206,7 @@
 "compiler__moduleAugmentationNoNewNames/main.ts": {"v":"CODE DIFFERS","lines":[{"line":5,"result":"code","tsox":["TS2454 Variable 'x' is used before being assigned.","TS2339 Property 'map' does not exist on type 'Observable<number>'.","TS7006 Parameter 'x' implicitly has an 'any' type."],"tsc":["TS2454 Variable 'x' is used before being assigned."]}]},
 "compiler__moduleAugmentationNoNewNames/map.ts": {"v":"MATCH","lines":[]},
 "compiler__moduleAugmentationNoNewNames/observable.ts": {"v":"MATCH","lines":[]},
-"compiler__moduleAugmentationOfAlias/a.ts": {"v":"FALSE POSITIVE","lines":[{"line":2,"result":"fp","tsox":["TS2693 'I' only refers to a type, but is being used as a value here."],"tsc":[]}]},
+"compiler__moduleAugmentationOfAlias/a.ts": {"v":"MATCH","lines":[]},
 "compiler__moduleAugmentationOfAlias/b.ts": {"v":"MATCH","lines":[]},
 "compiler__moduleAugmentationOfAlias/c.ts": {"v":"MATCH","lines":[]},
 "compiler__moduleAugmentationsBundledOutput1/m1.ts": {"v":"MATCH","lines":[]},

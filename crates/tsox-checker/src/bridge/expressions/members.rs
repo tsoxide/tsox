@@ -131,6 +131,16 @@ fn lookup_with_augmentation(
         crate::stack_guard::note_cut(crate::stack_guard::CutReason::StackExhausted);
         return None;
     }
+    // A `Promise<T>` reads as its empty built-in body, so a file's own `interface Promise<T>`
+    // (a `done`, or a `then` with a third callback) is looked up first: tsc merges it with the
+    // library's, and what the file wrote is what its calls are written against.
+    if let Some(value) = ctx.arena.promise_value_type(type_id)
+        && let Some(found) =
+            ctx.namespace
+                .augmentation_member("Promise", property_name, &[value], &mut ctx.arena)
+    {
+        return Some(found);
+    }
     if let Some(found) = lookup_member(&mut ctx.arena, type_id, property_name) {
         // A name that only an index signature supplies may be absent at run time.
         if ctx.option(crate::check_options::OptionField::NoUncheckedIndexedAccess)
